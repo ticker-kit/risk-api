@@ -33,7 +33,7 @@ def risk_from_ticker(ticker_input: TickerInput):
         raise HTTPException(status_code=404, detail="No data found")
 
     prices = df["Close"].dropna()
-    if not isinstance(prices, pd.Series):
+    if not isinstance(prices, pd.DataFrame):
         raise HTTPException(status_code=500, detail="Invalid data format")
 
     if len(prices) < 2:

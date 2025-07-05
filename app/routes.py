@@ -29,10 +29,13 @@ def risk_from_ticker(ticker_input: TickerInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    if df.empty:
+    if df is None or df.empty:
         raise HTTPException(status_code=404, detail="No data found")
 
     prices = df["Close"].dropna()
+    if not isinstance(prices, pd.Series):
+        raise HTTPException(status_code=500, detail="Invalid data format")
+
     if len(prices) < 2:
         raise HTTPException(status_code=400, detail="Not enough data")
 

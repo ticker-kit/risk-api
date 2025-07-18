@@ -253,51 +253,98 @@ async def trigger_price_update(request: dict):
         ) from e
 
 
+async def _get_price_from_redis(ticker: str) -> float | None:
+    """Get price from Redis cache."""
+    try:
+        return await redis_service.get_latest_price(ticker)
+    except Exception as e:
+        print(f"⚠️  Redis cache unavailable: {e}")
+        return None
+
+
+async def _get_price_from_worker(ticker: str) -> float | None:
+    """Get price from risk-worker service."""
+    try:
+        headers = {"X-Worker-Secret": settings.worker_secret}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.risk_worker_url}/latest-price/{ticker}",
+                headers=headers
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data["price"]
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        print(
+            f"⚠️  Risk-worker unavailable at {settings.risk_worker_url}: {e}")
+    return None
+
+
+async def _get_price_from_yfinance(ticker: str) -> float | None:
+    """Get price directly from yfinance."""
+    try:
+        print(f"📈 Fetching {ticker} price directly from yfinance...")
+        ticker_obj = yf.Ticker(ticker)
+        info = ticker_obj.info
+
+        # Try to get current price from different fields
+        price_fields = ['currentPrice', 'regularMarketPrice',
+                        'ask', 'bid', 'previousClose']
+        for field in price_fields:
+            if field in info and info[field] is not None:
+                return float(info[field])
+
+        # Last resort: try to get from history
+        hist = ticker_obj.history(period="1d")
+        if not hist.empty:
+            return float(hist['Close'].iloc[-1])
+
+    except Exception as yf_e:
+        print(f"⚠️  yfinance direct fetch failed: {yf_e}")
+    return None
+
+
+async def _cache_price_if_possible(ticker: str, price: float) -> None:
+    """Cache the price in Redis if possible."""
+    try:
+        await redis_service.set_latest_price(ticker, price)
+    except Exception as cache_e:
+        print(f"⚠️  Could not cache price: {cache_e}")
+
+
 @router.get("/latest-price/{ticker}")
 async def get_latest_price(ticker: str):
-    """Get the latest price for a ticker from Redis cache or risk-worker."""
+    """Get the latest price for a ticker from Redis cache, risk-worker, or yfinance."""
+    ticker = ticker.upper()
+
+    # Define price sources in order of preference
+    price_sources = [
+        ("redis_cache", _get_price_from_redis),
+        ("risk_worker", _get_price_from_worker),
+        ("yfinance_direct", _get_price_from_yfinance)
+    ]
 
     try:
-        # First try Redis cache
-        try:
-            price = await redis_service.get_latest_price(ticker)
+        for source_name, get_price_func in price_sources:
+            price = await get_price_func(ticker)
             if price is not None:
+                # Cache the price if it didn't come from cache
+                if source_name != "redis_cache":
+                    await _cache_price_if_possible(ticker, price)
+
                 return {
-                    "ticker": ticker.upper(),
+                    "ticker": ticker,
                     "price": price,
-                    "source": "redis_cache"
+                    "source": source_name
                 }
-        except Exception as e:
-            print(f"⚠️  Redis cache unavailable: {e}")
 
-        # If not in cache, try to get from risk-worker
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"http://risk-worker:8000/latest-price/{ticker}")
-                if response.status_code == 200:
-                    data = response.json()
-                    # Try to cache the price for future requests
-                    try:
-                        await redis_service.set_latest_price(ticker, data["price"])
-                    except Exception as cache_e:
-                        print(f"⚠️  Could not cache price: {cache_e}")
-                    return {
-                        "ticker": ticker.upper(),
-                        "price": data["price"],
-                        "source": "risk_worker"
-                    }
-        except (httpx.RequestError, httpx.HTTPStatusError) as e:
-            print(f"⚠️  Risk-worker unavailable: {e}")
-
-        # If all services are unavailable, provide helpful error message
+        # If all sources failed
         raise HTTPException(
             status_code=503,
             detail={
                 "error": "Price service unavailable",
-                "message": f"Cannot fetch price for {ticker.upper()}. " +
-                "Both Redis cache and risk-worker are unavailable.",
-                "suggestion": "Try using /search_ticker to verify the ticker symbol, " +
-                "or check service status."
+                "message": f"Cannot fetch price for {ticker}. All price sources are unavailable.",
+                "suggestion": "Try using /search_ticker to verify the ticker symbol, or check service status."
             }
         )
 

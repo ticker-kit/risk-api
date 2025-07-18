@@ -41,6 +41,12 @@ class Settings:
         # CORS
         self.cors_origin: str = self._get_env_var("CORS_ORIGIN")
 
+        # Risk Worker URL
+        self.risk_worker_url: str = self._get_env_var("RISK_WORKER_URL")
+
+        # Shared secret for risk-worker authentication
+        self.worker_secret: str = self._get_env_var("WORKER_SECRET")
+
         if self.env == "prod":
             self.redis_config = RedisConfig(
                 host=self._get_env_var("REDIS_HOST"),

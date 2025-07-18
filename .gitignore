@@ -7,3 +7,5 @@ venv/
 .update_versions.ps1
 data/
 .pylintrc
+
+logs/

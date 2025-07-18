@@ -1,6 +1,6 @@
 """ Main application entry point for the risk metrics API. """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,6 +60,12 @@ app.add_middleware(
 def root():
     """ Root endpoint. """
     return {"message": "Welcome to the Risk API"}
+
+
+@app.head("/", include_in_schema=False)
+def root_head():
+    """ HEAD request handler for root endpoint (e.g. for health checks). """
+    return Response(status_code=200)
 
 
 @app.get("/favicon.ico")

@@ -243,13 +243,7 @@ async def trigger_price_update(request: dict):
         print(f"⚠️  Failed to trigger price update: {e}")
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": "Price update service unavailable",
-                "message": f"Cannot trigger price update for {ticker}. " +
-                "Redis pub/sub is unavailable.",
-                "suggestion": "Start Redis service or use /search_ticker " +
-                "to verify ticker information."
-            }
+            detail=f"Price update service unavailable for {ticker}"
         ) from e
 
 
@@ -340,12 +334,8 @@ async def get_latest_price(ticker: str):
 
         # If all sources failed
         raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "Price service unavailable",
-                "message": f"Cannot fetch price for {ticker}. All price sources are unavailable.",
-                "suggestion": "Try using /search_ticker to verify the ticker symbol, or check service status."
-            }
+            status_code=404,
+            detail=f"Symbol '{ticker}' not found"
         )
 
     except HTTPException:

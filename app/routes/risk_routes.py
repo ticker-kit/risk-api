@@ -28,29 +28,38 @@ def risk_from_ticker(ticker_input: TickerInput):
     # Basic ticker validation
     if not ticker or len(ticker) > 10:
         raise HTTPException(
-            status_code=400, detail="Invalid ticker symbol length (max 10)")
+            status_code=400, detail="Invalid ticker: must be 1-10 characters")
 
     # Only allow alphanumeric characters and dots
     if not all(c.isalnum() or c == '.' or c == '^' for c in ticker):
         raise HTTPException(
-            status_code=400, detail="Invalid ticker symbol format (only alphanumeric," +
-            " dots and carets allowed)")
+            status_code=400, detail="Invalid ticker: only letters, numbers, dots, and ^ allowed")
 
     try:
         df = yf.download(ticker, period="6mo", progress=False)
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch data for {ticker}: {str(e)}") from e
+        error_msg = str(e).lower()
+        if "invalid" in error_msg or "not found" in error_msg:
+            raise HTTPException(
+                status_code=404, detail=f"Ticker '{ticker}' not found") from None
+        elif "timeout" in error_msg or "connection" in error_msg:
+            raise HTTPException(
+                status_code=503, detail="Market data service temporarily unavailable") from None
+        else:
+            raise HTTPException(
+                status_code=500, detail="Unable to retrieve market data") from e
 
     if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="No data found")
+        raise HTTPException(
+            status_code=404, detail=f"Symbol '{ticker}' does not exist")
 
     prices = df["Close"].dropna()
-    if not isinstance(prices, pd.DataFrame):
-        raise HTTPException(status_code=500, detail="Invalid data format")
+    if not isinstance(prices, pd.Series):
+        raise HTTPException(status_code=500, detail="Data retrieval error")
 
     if len(prices) < 2:
-        raise HTTPException(status_code=400, detail="Not enough data")
+        raise HTTPException(
+            status_code=400, detail=f"Insufficient data points for '{ticker}'")
 
     return {
         "ticker": ticker,

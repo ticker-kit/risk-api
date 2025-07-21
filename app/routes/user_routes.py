@@ -52,11 +52,22 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
     norm_username = normalize_username(form.username)
     user = session.exec(select(User).where(
         User.username == norm_username)).first()
+
     if not user or not verify_password(form.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        return {
+            "success": False,
+            "error": "Invalid credentials",
+            "access_token": None,
+            "token_type": None
+        }
 
     token = create_access_token({"sub": user.username})
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "success": True,
+        "error": None,
+        "access_token": token,
+        "token_type": "bearer"
+    }
 
 
 @router.get("/users")

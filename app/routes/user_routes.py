@@ -4,11 +4,10 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
-from app.config import settings
 from app.db import get_session
 
 from app.models.db_models import User
-from app.auth import create_access_token, hash_password, verify_password
+from app.auth import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter()
 
@@ -124,10 +123,19 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
 
 
 @router.get("/users")
-def list_users(session: Session = Depends(get_session)):
+def list_users(
+        session: Session = Depends(get_session),
+        current_user: User = Depends(get_current_user)):
     """ List all users. """
-    if settings.env == "prod":
+    # Check if user has admin privileges (currently hardcoded to gooneraki)
+    # TODO: Replace with proper role-based access control
+    if current_user.username != "gooneraki":
         raise HTTPException(
-            status_code=403, detail="Not allowed in production")
-    users = session.exec(select(User)).all()
-    return [{"id": user.id, "username": user.username} for user in users]
+            status_code=403, detail="Insufficient permissions to access user list")
+
+    try:
+        users = session.exec(select(User)).all()
+        return [{"id": user.id, "username": user.username} for user in users]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail="Something went wrong while fetching users") from e

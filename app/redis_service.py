@@ -1,9 +1,11 @@
 """Redis service for Pub/Sub functionality."""
 import json
 import asyncio
-from typing import Optional
+from typing import Optional, Any
+import fakeredis.aioredis
 import redis.asyncio as redis
 from app.config import settings
+from app.logger_service import logger
 
 # Channel names
 TICKER_UPDATES_CHANNEL = "ticker_updates"
@@ -14,7 +16,8 @@ class RedisService:
     """Redis service for handling Pub/Sub operations."""
 
     def __init__(self):
-        self.redis_client: Optional[redis.Redis] = None
+        self.redis_client: Optional[redis.Redis |
+                                    fakeredis.aioredis.FakeRedis] = None
         self.is_fake_redis = False
 
     async def connect(self):
@@ -38,7 +41,6 @@ class RedisService:
     async def _connect_fake_redis(self):
         """Connect to FakeRedis for local development."""
         try:
-            import fakeredis.aioredis
             self.redis_client = fakeredis.aioredis.FakeRedis(
                 decode_responses=True
             )
@@ -214,6 +216,41 @@ class RedisService:
                 "fallback_used": self.is_fake_redis,
                 "error": str(e)
             }
+
+    async def get_cached_data(self, key: str):
+        """Get data from Redis cache."""
+        if not self.redis_client:
+            await self.connect()
+
+        assert self.redis_client is not None
+        try:
+            cached_data = await self.redis_client.get(key)
+            return json.loads(cached_data) if cached_data else None
+        except Exception as e:
+            logger.error("Failed to get cached data for key %s: %s", key, e)
+            return None
+
+    async def set_cached_data(self, key: str, data: Any, expiry: int = 300):
+        """Set data in Redis cache."""
+        if not self.redis_client:
+            await self.connect()
+
+        assert self.redis_client is not None
+        try:
+            await self.redis_client.setex(key, expiry, json.dumps(data))
+        except Exception as e:
+            logger.error("Failed to cache data for key %s: %s", key, e)
+
+    async def delete_cached_data(self, key: str):
+        """Delete data from Redis cache."""
+        if not self.redis_client:
+            await self.connect()
+
+        assert self.redis_client is not None
+        try:
+            await self.redis_client.delete(key)
+        except Exception as e:
+            logger.error("Failed to delete cached data for key %s: %s", key, e)
 
 
 # Global Redis service instance

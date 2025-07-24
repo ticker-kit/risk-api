@@ -62,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File local_start.ps1
 - `DELETE /portfolio/{symbol}` - Remove position
 
 ### Risk & Pricing
-- `GET /latest-price/{ticker}` - Get cached price
+
 - `GET /search_ticker` - Search tickers
 - `POST /trigger-price-update/{ticker}` - Trigger price fetch
 

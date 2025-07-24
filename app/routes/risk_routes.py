@@ -1,58 +1,58 @@
 """ Routes for risk metrics calculation. """
-import pandas as pd
+import logging
 import yfinance as yf
 from fastapi import APIRouter, HTTPException
-from app.models.models import PriceInput, TickerInput
-from app.utils import calculate_risk_from_prices
 
+from app.models.response_models import TickerMetricsResponse
+from app.redis_service import redis_service
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/risk_metrics")
-def risk_from_prices(data: PriceInput):
-    """ Calculate risk metrics from a list of prices. """
-    prices = pd.Series(data.prices)
-
-    if len(prices) < 2:
-        raise HTTPException(
-            status_code=400, detail="At least 2 prices required")
-
-    return calculate_risk_from_prices(prices)
-
-
-@router.post("/risk_metrics_from_ticker")
-def risk_from_ticker(ticker_input: TickerInput):
+@router.get("/ticker/{ticker}", response_model=TickerMetricsResponse)
+async def get_ticker_data(ticker: str, refresh: bool = False):
     """ Calculate risk metrics from a stock ticker. """
-    ticker = ticker_input.ticker.upper().strip()
+    ticker = ticker.upper().strip()
 
     # Basic ticker validation
-    if not ticker or len(ticker) > 10:
-        raise HTTPException(
-            status_code=400, detail="Invalid ticker symbol length (max 10)")
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Ticker is required")
 
-    # Only allow alphanumeric characters and dots
-    if not all(c.isalnum() or c == '.' or c == '^' for c in ticker):
-        raise HTTPException(
-            status_code=400, detail="Invalid ticker symbol format (only alphanumeric," +
-            " dots and carets allowed)")
+    cache_key = f"ticker_data:{ticker}"
+
+    if refresh:
+        await redis_service.delete_cached_data(cache_key)
+
+    # 1. Return cached data
+    cached_data = await redis_service.get_cached_data(cache_key)
+    if cached_data:
+        return cached_data
 
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
+        ticker_obj = yf.Ticker(ticker)
+        df = ticker_obj.history(period="max", auto_adjust=True)
+        info = ticker_obj.info
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch data for {ticker}: {str(e)}") from e
+        # 2. Return error data
+        logger.error(
+            "Unable to retrieve yf.Ticker data for ticker: %s, error: %s", ticker, e
+        )
+        return TickerMetricsResponse.create_error_response(
+            ticker, f"Unable to retrieve yf.Ticker data for ticker: {ticker}"
+        )
 
     if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="No data found")
+        # 3. Return not found data
+        not_found_response = TickerMetricsResponse.create_error_response(
+            ticker, f"Symbol '{ticker}' does not exist"
+        )
+        await redis_service.set_cached_data(cache_key, not_found_response.model_dump())
+        return not_found_response
 
+    # 4. Return success data - all processing now handled by the class method
     prices = df["Close"].dropna()
-    if not isinstance(prices, pd.DataFrame):
-        raise HTTPException(status_code=500, detail="Invalid data format")
+    success_data = TickerMetricsResponse.from_ticker_data(ticker, prices, info)
 
-    if len(prices) < 2:
-        raise HTTPException(status_code=400, detail="Not enough data")
-
-    return {
-        "ticker": ticker,
-        **calculate_risk_from_prices(prices)
-    }
+    await redis_service.set_cached_data(cache_key, success_data.model_dump())
+    return success_data

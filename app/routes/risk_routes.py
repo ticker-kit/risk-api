@@ -25,34 +25,42 @@ async def get_ticker_data(ticker: str, refresh: bool = False):
         await redis_service.delete_cached_data(cache_key)
 
     # 1. Return cached data
-    cached_data = await redis_service.get_cached_data(cache_key)
-    if cached_data:
-        return cached_data
+    cached_dict = await redis_service.get_cached_data(cache_key)
+    if cached_dict:
+        return TickerMetricsResponse.from_cache_data(cached_dict)
 
     try:
         ticker_obj = yf.Ticker(ticker)
-        df = ticker_obj.history(period="max", auto_adjust=True)
+        df = ticker_obj.history(period="20y", auto_adjust=True)
         info = ticker_obj.info
     except Exception as e:
         # 2. Return error data
         logger.error(
             "Unable to retrieve yf.Ticker data for ticker: %s, error: %s", ticker, e
         )
-        return TickerMetricsResponse.create_error_response(
-            ticker, f"Unable to retrieve yf.Ticker data for ticker: {ticker}"
+        return TickerMetricsResponse.to_cached_data(
+            ticker, error_msg=f"Unable to retrieve yf.Ticker data for ticker: {ticker}"
         )
 
     if df is None or df.empty:
         # 3. Return not found data
-        not_found_response = TickerMetricsResponse.create_error_response(
-            ticker, f"Symbol '{ticker}' does not exist"
+        not_found_response = TickerMetricsResponse.to_cached_data(
+            ticker, error_msg=f"Symbol '{ticker}' does not exist"
         )
         await redis_service.set_cached_data(cache_key, not_found_response.model_dump())
         return not_found_response
 
     # 4. Return success data - all processing now handled by the class method
-    prices = df["Close"].dropna()
-    success_data = TickerMetricsResponse.from_ticker_data(ticker, prices, info)
+    close_prices = df["Close"].dropna()
+    new_cached_data = TickerMetricsResponse.to_cached_data(
+        ticker,
+        close_prices=close_prices,
+        info=info
+    )
 
-    await redis_service.set_cached_data(cache_key, success_data.model_dump())
+    await redis_service.set_cached_data(cache_key, new_cached_data.model_dump())
+
+    success_data = TickerMetricsResponse.from_cache_data(
+        new_cached_data.model_dump())
+
     return success_data

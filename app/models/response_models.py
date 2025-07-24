@@ -67,24 +67,20 @@ class TickerMetricsResponse(BaseModel):
     max_drawdown: Optional[float] = None
 
     @classmethod
-    def from_ticker_data(
-        cls,
-        ticker: str,
-        prices: pd.Series,
-        info: dict
-    ) -> "TickerMetricsResponse":
-        """
-        Create TickerMetricsResponse from raw ticker data with all time series processing.
+    def from_cache_data(cls, cache_dict: dict) -> "TickerMetricsResponse":
 
-        Args:
-            ticker: Stock ticker symbol
-            prices: Series of closing prices with datetime index
-            info: Ticker info from yfinance
+        # Check if this is an error response
+        if cache_dict["error_msg"]:
+            return cls(**cache_dict)
 
-        Returns:
-            Fully populated TickerMetricsResponse instance
-        """
-        # Calculate time series metrics
+        # Get data from cache
+        ticker = cache_dict["ticker"]
+        info = cache_dict["info"]
+        prices = pd.Series(
+            cache_dict["time_series_data"]["close"], index=cache_dict["time_series_data"]["date"])
+        prices.index = pd.to_datetime(prices.index)
+
+        # lets do some processing
 
         fitted_values = pd.Series(
             data=_get_fitted_values(prices.values.tolist()),
@@ -182,17 +178,22 @@ class TickerMetricsResponse(BaseModel):
         )
 
     @classmethod
-    def create_error_response(cls, ticker: str, error_msg: str) -> "TickerMetricsResponse":
-        """Create an error response for failed ticker requests."""
+    def to_cached_data(cls,
+                       ticker: str,
+                       close_prices: Optional[pd.Series] = None,
+                       info: Optional[dict] = None,
+                       error_msg: Optional[str] = None) -> "TickerMetricsResponse":
+        """ Convert to cached data. """
+        if error_msg is not None:
+            return cls(ticker=ticker, error_msg=error_msg)
+
         return cls(
             ticker=ticker,
-            info=None,
-            time_series_data=None,
-            mean_return=None,
-            volatility=None,
-            sharpe_ratio=None,
-            max_drawdown=None,
-            error_msg=error_msg
+            info=info,
+            time_series_data={
+                "date": [date.isoformat().split("T")[0] for date in close_prices.index],
+                "close": close_prices.values.tolist()
+            }
         )
 
     @classmethod

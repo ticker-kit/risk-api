@@ -31,7 +31,7 @@ async def get_ticker_data(ticker: str, refresh: bool = False):
 
     try:
         ticker_obj = yf.Ticker(ticker)
-        df = ticker_obj.history(period="20y", auto_adjust=True)
+        df = ticker_obj.history(period="10y", auto_adjust=True)
         info = ticker_obj.info
     except Exception as e:
         # 2. Return error data

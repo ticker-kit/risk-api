@@ -12,6 +12,7 @@ from app.routes.user_routes import router as user_router
 from app.routes.portfolio_routes import router as portfolio_router
 from app.db import init_db
 from app.redis_service import redis_service
+from app.metrics import setup_metrics, metrics_endpoint
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,9 @@ app = FastAPI(
     description="A comprehensive risk management API",
     version="1.0.0"
 )
+
+# Set up Prometheus metrics
+setup_metrics(app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -87,6 +91,12 @@ def favicon():
 def healthz():
     """ Health check endpoint. """
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics():
+    """ Prometheus metrics endpoint. """
+    return await metrics_endpoint()
 
 
 app.include_router(risk_router)

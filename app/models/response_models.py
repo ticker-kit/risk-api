@@ -1,7 +1,7 @@
 """ Custom response models for the application. """
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
@@ -68,7 +68,7 @@ class TickerMetricsResponse(BaseModel):
 
     @classmethod
     def from_cache_data(cls, cache_dict: dict) -> "TickerMetricsResponse":
-
+        """ Convert cached data to TickerMetricsResponse. """
         # Check if this is an error response
         if cache_dict["error_msg"]:
             return cls(**cache_dict)
@@ -207,3 +207,38 @@ class TickerMetricsResponse(BaseModel):
             rolling_return - rolling_return.mean()) / rolling_return.std()
 
         return rolling_return, rolling_return_z_score
+
+
+class EnhancedAssetPosition(BaseModel):
+    """Enhanced asset position with yfinance data."""
+    # Original position data
+    id: Optional[int]
+    ticker: str
+    quantity: float
+    user_id: int
+
+    # Enhanced yfinance data
+    current_price: Optional[float] = None
+    market_value: Optional[float] = None
+    ticker_info: Optional[Dict[str, Any]] = None
+    historical_data: Optional[Dict[str, List[float]]] = None
+    error: Optional[str] = None
+
+
+class PortfolioMarketData(BaseModel):
+    """Market data for portfolio with aligned time series."""
+    tickers: List[str]
+    infos: List[Dict[str, Any]]
+    # keys: "dates" (List[str]) + ticker symbols (List[float])
+    timeseries_data: Dict[str, List[Any]]
+    # position info: ticker, quantity, market_value
+    positions: List[Dict[str, Any]]
+    total_market_value: Optional[float] = None
+    last_updated: str
+
+
+class EnhancedPortfolioResponse(BaseModel):
+    """Response model for enhanced portfolio with market data."""
+    positions: List[EnhancedAssetPosition]
+    total_market_value: Optional[float] = None
+    last_updated: str

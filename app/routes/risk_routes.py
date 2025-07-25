@@ -1,10 +1,10 @@
 """ Routes for risk metrics calculation. """
 import logging
-import yfinance as yf
 from fastapi import APIRouter, HTTPException
 
 from app.models.response_models import TickerMetricsResponse
 from app.redis_service import redis_service
+from app.yfinance_service import yfinance_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,17 +30,31 @@ async def get_ticker_data(ticker: str, refresh: bool = False):
         return TickerMetricsResponse.from_cache_data(cached_dict)
 
     try:
-        ticker_obj = yf.Ticker(ticker)
-        df = ticker_obj.history(period="10y", auto_adjust=True)
-        info = ticker_obj.info
-    except Exception as e:
-        # 2. Return error data
+        # Use yfinance service for getting historical data (10 years)
+        df = await yfinance_service.get_historical_data(ticker, period="10y", auto_adjust=True)
+
+        # Get ticker info
+        info = await yfinance_service.get_ticker_info(ticker)
+
+    except HTTPException as e:
+        # Handle validation or service errors
         logger.error(
-            "Unable to retrieve yf.Ticker data for ticker: %s, error: %s", ticker, e
+            "yfinance service error for ticker %s: %s", ticker, e.detail)
+        error_response = TickerMetricsResponse.to_cached_data(
+            ticker, error_msg=f"Unable to retrieve data for ticker: {ticker}"
         )
-        return TickerMetricsResponse.to_cached_data(
-            ticker, error_msg=f"Unable to retrieve yf.Ticker data for ticker: {ticker}"
+        await redis_service.set_cached_data(cache_key, error_response.model_dump())
+        return error_response
+
+    except Exception as e:
+        # Handle unexpected errors
+        logger.error(
+            "Unexpected error retrieving data for ticker %s: %s", ticker, e)
+        error_response = TickerMetricsResponse.to_cached_data(
+            ticker, error_msg=f"Unable to retrieve data for ticker: {ticker}"
         )
+        await redis_service.set_cached_data(cache_key, error_response.model_dump())
+        return error_response
 
     if df is None or df.empty:
         # 3. Return not found data

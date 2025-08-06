@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-log_level: str = os.getenv("LOG_LEVEL", "INFO")
+log_level: str = os.getenv("LOG_LEVEL", "WARNING")
 log_file: str = os.getenv("LOG_FILE", "logs/app.log")
 
 

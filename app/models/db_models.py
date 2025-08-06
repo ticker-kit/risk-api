@@ -13,8 +13,10 @@ class User(SQLModel, table=True):
 
 class AssetPosition(SQLModel, table=True):
     """ Asset position model for the database. """
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int = Field(primary_key=True)
+
     ticker: str
     quantity: float
     user_id: int = Field(foreign_key="user.id")
-    owner: Optional["User"] = Relationship(back_populates="positions")
+
+    owner: User = Relationship(back_populates="positions")

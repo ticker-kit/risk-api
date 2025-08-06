@@ -1,3 +1,4 @@
+""" Client models for the application. """
 from pydantic import BaseModel
 
 

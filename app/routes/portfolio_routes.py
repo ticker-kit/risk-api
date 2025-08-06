@@ -134,7 +134,6 @@ async def delete_position(
     session: Session = Depends(get_session)
 ):
     """Delete a position from the portfolio."""
-    symbol = symbol.upper().strip()
 
     pos = session.exec(select(AssetPosition).where(
         AssetPosition.user_id == user.id, AssetPosition.ticker == symbol)).first()

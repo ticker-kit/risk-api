@@ -1,10 +1,11 @@
 """
 YFinance service module - centralized yfinance interactions.
-Provides clean interfaces for ticker data, validation, search, and bulk operations.
 """
 
 import logging
+from enum import Enum
 from typing import Dict, List, Optional,  Any
+
 import yfinance as yf
 import pandas as pd
 from fastapi import HTTPException
@@ -14,18 +15,67 @@ from app.redis_service import redis_service
 logger = logging.getLogger(__name__)
 
 
+class CacheKey(Enum):
+    """Cache keys for yfinance operations."""
+    TICKER_INFO = "ticker_info"
+    HISTORICAL = "historical"
+    SEARCH = "search"
+
+
 class YFinanceService:
     """Service class for all yfinance operations."""
 
     def __init__(self):
         self.cache_duration = {
-            'ticker_info': 300,      # 5 minutes
-            'historical': 600,       # 10 minutes
-            'search': 1800,          # 30 minutes
-            'validation': 3600,      # 1 hour
+            CacheKey.TICKER_INFO: 300,      # 5 minutes
+            CacheKey.HISTORICAL: 600,       # 10 minutes
+            CacheKey.SEARCH: 1800,          # 30 minutes
         }
 
-    async def validate_ticker(self, ticker: str) -> bool:
+    async def validate_ticker(self, ticker: str):
+        if not ticker:
+            raise HTTPException(
+                status_code=400, detail="Ticker symbol is required")
+
+        upper_ticker = ticker.upper().strip()
+
+        # 1. Check cache first
+        cache_key = f"{CacheKey.TICKER_INFO}:{upper_ticker}"
+        cached_result = await redis_service.get_cached_data(cache_key)
+
+        if cached_result is not None:
+            cached_result_symbol: str = cached_result.get('symbol')
+            if not cached_result_symbol:
+                return
+            return cached_result_symbol
+
+        # 2. Validate with yfinance
+        try:
+            yf_ticker = yf.Ticker(upper_ticker)
+
+            # 2.1. Unsuccessful ticker
+            info = yf_ticker.info
+
+            if not info:
+                return
+
+            fetched_symbol: str = info.get('symbol')
+
+            if not fetched_symbol:
+                return
+
+            # 2.2 Successfully validated ticker
+            cache_key_new = f"{CacheKey.TICKER_INFO}:{fetched_symbol}"
+            await redis_service.set_cached_data(cache_key_new,
+                                                info,
+                                                expiry=self.cache_duration[CacheKey.TICKER_INFO])
+            return fetched_symbol
+
+        except Exception as e:
+            logger.error("Error validating ticker %s: %s", ticker, e)
+            return
+
+    async def validate_ticker2(self, ticker: str) -> bool:
         """
         Validate if a ticker symbol exists and has valid data.
 
@@ -55,7 +105,7 @@ class YFinanceService:
             )
 
         # Check cache first
-        cache_key = f"ticker_validation:{ticker.upper()}"
+        cache_key = f"{CacheKey.TICKER_INFO}:{ticker.upper()}"
         cached_result = await redis_service.get_cached_data(cache_key)
 
         if cached_result is not None:
@@ -100,7 +150,7 @@ class YFinanceService:
         Raises:
             HTTPException: If ticker data cannot be retrieved
         """
-        cache_key = f"ticker_info:{ticker.upper()}"
+        cache_key = f"{CacheKey.TICKER_INFO}:{ticker.upper()}"
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data:
@@ -122,7 +172,7 @@ class YFinanceService:
 
             # Cache the result
             await redis_service.set_cached_data(
-                cache_key, cleaned_info, expiry=self.cache_duration['ticker_info']
+                cache_key, cleaned_info, expiry=self.cache_duration[CacheKey.TICKER_INFO]
             )
 
             return cleaned_info
@@ -150,7 +200,7 @@ class YFinanceService:
         Returns:
             DataFrame with historical data or None if failed
         """
-        cache_key = f"historical:{ticker.upper()}:{period}:{auto_adjust}"
+        cache_key = f"{CacheKey.HISTORICAL}:{ticker.upper()}:{period}:{auto_adjust}"
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data is not None:
@@ -175,7 +225,7 @@ class YFinanceService:
             }
 
             await redis_service.set_cached_data(
-                cache_key, cache_data, expiry=self.cache_duration['historical']
+                cache_key, cache_data, expiry=self.cache_duration[CacheKey.HISTORICAL]
             )
 
             return hist_data
@@ -225,7 +275,7 @@ class YFinanceService:
             }
 
             await redis_service.set_cached_data(
-                cache_key, cache_data, expiry=self.cache_duration['historical']
+                cache_key, cache_data, expiry=self.cache_duration[CacheKey.HISTORICAL]
             )
 
             return hist_data
@@ -247,7 +297,12 @@ class YFinanceService:
         Returns:
             List of ticker search results
         """
-        cache_key = f"ticker_search:{query.lower()}"
+        query_upper = query.upper().strip()
+        if not query_upper:
+            raise HTTPException(
+                status_code=400, detail="Search query is required")
+
+        cache_key = f"{CacheKey.SEARCH}:{query_upper}"
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data:
@@ -264,7 +319,7 @@ class YFinanceService:
                 results.append(item)
 
             await redis_service.set_cached_data(
-                cache_key, results, expiry=self.cache_duration['search']
+                cache_key, results, expiry=self.cache_duration[CacheKey.SEARCH]
             )
 
             return results[:limit]

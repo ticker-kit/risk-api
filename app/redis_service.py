@@ -129,9 +129,7 @@ class RedisService:
                 TICKER_UPDATES_CHANNEL,
                 json.dumps(message)
             )
-            redis_type = "FakeRedis" if self.is_fake_redis else "Redis"
-            print(
-                f"📤 Published ticker update to {redis_type}: {ticker} ({action})")
+
         except redis.RedisError as e:
             print(f"❌ Failed to publish ticker update: {e}")
             raise

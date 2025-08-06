@@ -21,7 +21,7 @@ if DATABASE_URL.startswith("sqlite:///"):
         os.makedirs(db_dir, exist_ok=True)
         print(f"Created directory: {db_dir}")
 
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL, echo=False)
 
 
 def get_session():

@@ -12,27 +12,12 @@ from app.models.db_models import AssetPosition, User
 from app.models.yfinance_models import TickerSearchReference
 from app.models.response_models import EnhancedAssetPosition, EnhancedPortfolioResponse, \
     PortfolioMarketData
+from app.models.client_models import AssetPositionRequest
 from app.redis_service import redis_service
 from app.yfinance_service import yfinance_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def validate_ticker(ticker):
-    """ Validate a ticker symbol. """
-    if not ticker:
-        raise HTTPException(
-            status_code=400, detail="Ticker symbol is required")
-
-    if len(ticker) > 10:
-        raise HTTPException(
-            status_code=400, detail="Ticker symbol is too long (max 10 characters)")
-
-    if not all(c.isalnum() or c == '.' or c == '^' for c in ticker):
-        raise HTTPException(
-            status_code=400, detail="Invalid ticker symbol format (only alphanumeric, " +
-            "dots and carets allowed)")
 
 
 @router.get("/portfolio", response_model=List[AssetPosition])
@@ -44,20 +29,31 @@ def get_portfolio(
     return session.exec(select(AssetPosition).where(AssetPosition.user_id == user.id)).all()
 
 
-@router.post("/portfolio", response_model=AssetPosition)
+@router.post("/portfolio", response_model=AssetPositionRequest)
 async def add_position(
-    position: AssetPosition,
+    position: AssetPositionRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """ Add a position to the portfolio. """
 
-    assert user.id is not None, "Authenticated user must have an id"
+    # Assert that the user has an id
+    if user.id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="User authentication error: missing user ID"
+        )
 
-    position.ticker = position.ticker.upper().strip()
+    # Validate inputs
+    ticker = await yfinance_service.validate_ticker(position.ticker)
+    if not ticker:
+        raise HTTPException(
+            status_code=400, detail="Invalid ticker symbol")
 
-    # Validate ticker symbol
-    validate_ticker(position.ticker)
+    quantity = position.quantity
+    if quantity is None or quantity <= 0 or quantity > 1000000:
+        raise HTTPException(
+            status_code=400, detail="Quantity must be a positive number between 1 and 1,000,000.")
 
     # Check if ticker already exists for user
     existing = session.exec(select(AssetPosition).where(
@@ -66,18 +62,24 @@ async def add_position(
         raise HTTPException(
             status_code=409, detail="Position already exists. Use update instead.")
 
-    # Validate ticker symbol with yfinance
-    await yfinance_service.validate_ticker(position.ticker)
+    obj_to_add = AssetPosition(
+        ticker=ticker,
+        quantity=quantity,
+        user_id=user.id
+    )
 
-    position.user_id = user.id
-    session.add(position)
+    obj_to_return = AssetPositionRequest(
+        ticker=ticker,
+        quantity=quantity
+    )
+
+    session.add(obj_to_add)
     session.commit()
-    session.refresh(position)
 
     # Publish ticker update event to Redis
     try:
         await redis_service.publish_ticker_update(
-            ticker=position.ticker,
+            ticker=ticker,
             user_id=user.id,
             action="add"
         )
@@ -85,7 +87,7 @@ async def add_position(
         print(f"⚠️  Failed to publish ticker update event: {e}")
         # Don't fail the request if Redis is unavailable
 
-    return position
+    return obj_to_return
 
 
 @router.put("/portfolio/{symbol}", response_model=AssetPosition)

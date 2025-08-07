@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from app.models.response_models import TickerMetricsResponse
-from app.redis_service import redis_service
+from app.redis_service import redis_service, construct_cache_key, CacheKey
 from app.yfinance_service import yfinance_service
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ async def get_ticker_data(ticker: str, refresh: bool = False):
     if not ticker:
         raise HTTPException(status_code=400, detail="Ticker is required")
 
-    cache_key = f"ticker_data:{ticker}"
+    cache_key = construct_cache_key(CacheKey.TICKER_METRICS, ticker)
 
     if refresh:
         await redis_service.delete_cached_data(cache_key)
@@ -31,7 +31,7 @@ async def get_ticker_data(ticker: str, refresh: bool = False):
 
     try:
         # Use yfinance service for getting historical data (10 years)
-        df = await yfinance_service.get_historical_data(ticker, period="10y", auto_adjust=True)
+        df = await yfinance_service.get_historical_data(ticker, period="10y")
 
         # Get ticker info
         info = await yfinance_service.get_ticker_info(ticker)

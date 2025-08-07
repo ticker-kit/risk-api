@@ -13,7 +13,7 @@ from app.models.yfinance_models import TickerSearchReference
 from app.models.response_models import EnhancedAssetPosition, EnhancedPortfolioResponse, \
     PortfolioMarketData
 from app.models.client_models import AssetPositionRequest
-from app.redis_service import redis_service
+from app.redis_service import redis_service, construct_cache_key, CacheKey
 from app.yfinance_service import yfinance_service
 
 router = APIRouter()
@@ -260,7 +260,8 @@ async def get_enhanced_portfolio(
     tickers = sorted([pos.ticker for pos in positions])
 
     # Check cache first
-    cache_key = f"enhanced_portfolio:{user.id}:{period}:{':'.join(sorted(tickers))}"
+    cache_key = construct_cache_key(
+        CacheKey.ENHANCED_PORTFOLIO, user.id, period, ':'.join(sorted(tickers)))
     cached_data = await redis_service.get_cached_data(cache_key)
 
     if cached_data:
@@ -364,7 +365,9 @@ async def get_portfolio_market_data(
     tickers = sorted([pos.ticker for pos in positions])
 
     # Check cache first
-    cache_key = f"portfolio_market_data:{user.id}:{period}:{':'.join(tickers)}"
+
+    cache_key = construct_cache_key(
+        CacheKey.PORTFOLIO_MARKET_DATA, user.id, period, ':'.join(tickers))
     cached_data = await redis_service.get_cached_data(cache_key)
 
     if cached_data:

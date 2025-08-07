@@ -12,7 +12,7 @@ from app.models.db_models import AssetPosition, User
 from app.models.yfinance_models import TickerSearchReference
 from app.models.response_models import EnhancedAssetPosition, EnhancedPortfolioResponse, \
     PortfolioMarketData
-from app.models.client_models import AssetPositionRequest
+from app.models.client_models import AssetPositionRequest, AssetPositionWithInfo
 from app.redis_service import redis_service, construct_cache_key, CacheKey
 from app.yfinance_service import yfinance_service
 
@@ -20,13 +20,22 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/portfolio", response_model=List[AssetPosition])
-def get_portfolio(
+@router.get("/portfolio", response_model=List[AssetPositionWithInfo])
+async def get_portfolio(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """ Get the portfolio for a user. """
-    return session.exec(select(AssetPosition).where(AssetPosition.user_id == user.id)).all()
+    results = session.exec(select(AssetPosition).where(
+        AssetPosition.user_id == user.id)).all()
+
+    # Create list of AssetPositionWithInfo objects using list comprehension
+    positions_with_info = [
+        await AssetPositionWithInfo.add_info(result.ticker, result.quantity)
+        for result in results
+    ]
+
+    return positions_with_info
 
 
 @router.post("/portfolio", response_model=AssetPositionRequest)

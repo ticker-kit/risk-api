@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import HTTPException
 
 from app.redis_service import redis_service
+from app.models.yfinance_models import TickerInfo
 
 logger = logging.getLogger(__name__)
 
@@ -75,69 +76,7 @@ class YFinanceService:
             logger.error("Error validating ticker %s: %s", ticker, e)
             return
 
-    async def validate_ticker2(self, ticker: str) -> bool:
-        """
-        Validate if a ticker symbol exists and has valid data.
-
-        Args:
-            ticker: Ticker symbol to validate
-
-        Returns:
-            bool: True if ticker is valid
-
-        Raises:
-            HTTPException: If ticker is invalid
-        """
-        if not ticker:
-            raise HTTPException(
-                status_code=400, detail="Ticker symbol is required")
-
-        if len(ticker) > 10:
-            raise HTTPException(
-                status_code=400,
-                detail="Ticker symbol is too long (max 10 characters)"
-            )
-
-        if not all(c.isalnum() or c == '.' or c == '^' for c in ticker):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid ticker symbol format (only alphanumeric, dots and carets allowed)"
-            )
-
-        # Check cache first
-        cache_key = f"{CacheKey.TICKER_INFO}:{ticker.upper()}"
-        cached_result = await redis_service.get_cached_data(cache_key)
-
-        if cached_result is not None:
-            if not cached_result:
-                raise HTTPException(
-                    status_code=404, detail="Ticker not found or invalid.")
-            return True
-
-        # Validate with yfinance
-        try:
-            info = yf.Ticker(ticker).info
-            is_valid = bool(info and info.get(
-                'regularMarketPrice') is not None)
-
-            # Cache the result
-            await redis_service.set_cached_data(
-                cache_key, is_valid, expiry=self.cache_duration['validation']
-            )
-
-            if not is_valid:
-                raise HTTPException(
-                    status_code=404, detail="Ticker not found or invalid.")
-
-            return True
-
-        except Exception as e:
-            # Cache negative result for shorter time
-            await redis_service.set_cached_data(cache_key, False, expiry=60)
-            raise HTTPException(
-                status_code=404, detail="Ticker not found or invalid.") from e
-
-    async def get_ticker_info(self, ticker: str) -> Dict[str, Any]:
+    async def get_ticker_info(self, ticker: str) -> TickerInfo:
         """
         Get ticker information from yfinance.
 
@@ -181,7 +120,7 @@ class YFinanceService:
             logger.error("Error fetching ticker info for %s: %s", ticker, e)
             raise HTTPException(
                 status_code=503,
-                detail=f"Unable to retrieve data for ticker: {ticker}"
+                detail=f"Unable to retrieve info for ticker: {ticker}"
             ) from e
 
     async def get_historical_data(

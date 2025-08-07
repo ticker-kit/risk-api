@@ -15,3 +15,13 @@ class TickerSearchReference(BaseModel):
     index: Optional[str] = None
     score: Optional[float] = None
     isYahooFinance: Optional[bool] = None
+
+
+class TickerInfo(BaseModel):
+    """ A model for ticker information. """
+    symbol: str
+    quoteType: str
+    typeDisp: str
+    currency: str
+    exchange: str
+    expireIsoDate: Optional[str] = None

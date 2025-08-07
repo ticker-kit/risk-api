@@ -38,12 +38,11 @@ async def get_portfolio(
     return positions_with_info
 
 
-@router.post("/portfolio", response_model=AssetPositionRequest)
+@router.post("/portfolio", response_model=AssetPositionWithInfo)
 async def add_position(
-    position: AssetPositionRequest,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
+        position: AssetPositionRequest,
+        user: User = Depends(get_current_user),
+        session: Session = Depends(get_session)):
     """ Add a position to the portfolio. """
 
     # Assert that the user has an id
@@ -77,10 +76,7 @@ async def add_position(
         user_id=user.id
     )
 
-    obj_to_return = AssetPositionRequest(
-        ticker=ticker,
-        quantity=quantity
-    )
+    obj_to_return = await AssetPositionWithInfo.add_info(ticker, quantity)
 
     session.add(obj_to_add)
     session.commit()
@@ -99,13 +95,12 @@ async def add_position(
     return obj_to_return
 
 
-@router.put("/portfolio/{symbol}", response_model=AssetPosition)
+@router.put("/portfolio/{symbol}", response_model=AssetPositionWithInfo)
 async def update_position(
-    symbol: str,
-    quantity: float,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
+        symbol: str,
+        quantity: float,
+        user: User = Depends(get_current_user),
+        session: Session = Depends(get_session)):
     """Update a position in the portfolio."""
     assert user.id is not None, "Authenticated user must have an id"
 
@@ -120,7 +115,8 @@ async def update_position(
     pos.quantity = quantity
     session.add(pos)
     session.commit()
-    session.refresh(pos)
+
+    obj_to_return = await AssetPositionWithInfo.add_info(symbol, quantity)
 
     # Publish ticker update event to Redis
     try:
@@ -133,7 +129,7 @@ async def update_position(
         print(f"⚠️  Failed to publish ticker update event: {e}")
         # Don't fail the request if Redis is unavailable
 
-    return pos
+    return obj_to_return
 
 
 @router.delete("/portfolio/{symbol}", status_code=204)

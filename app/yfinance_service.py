@@ -26,13 +26,6 @@ class CacheKey(Enum):
 class YFinanceService:
     """Service class for all yfinance operations."""
 
-    def __init__(self):
-        self.cache_duration = {
-            CacheKey.TICKER_INFO: 300,      # 5 minutes
-            CacheKey.HISTORICAL: 600,       # 10 minutes
-            CacheKey.SEARCH: 1800,          # 30 minutes
-        }
-
     async def validate_ticker(self, ticker: str):
         if not ticker:
             raise HTTPException(
@@ -67,9 +60,7 @@ class YFinanceService:
 
             # 2.2 Successfully validated ticker
             cache_key_new = f"{CacheKey.TICKER_INFO}:{fetched_symbol}"
-            await redis_service.set_cached_data(cache_key_new,
-                                                info,
-                                                expiry=self.cache_duration[CacheKey.TICKER_INFO])
+            await redis_service.set_cached_data(cache_key_new, info)
             return fetched_symbol
 
         except Exception as e:
@@ -110,9 +101,7 @@ class YFinanceService:
             ] and not (isinstance(v, (list, dict)) and len(str(v)) > 1000)}
 
             # Cache the result
-            await redis_service.set_cached_data(
-                cache_key, cleaned_info, expiry=self.cache_duration[CacheKey.TICKER_INFO]
-            )
+            await redis_service.set_cached_data(cache_key, cleaned_info)
 
             return cleaned_info
 
@@ -154,7 +143,7 @@ class YFinanceService:
                 period=period, auto_adjust=auto_adjust)
 
             if hist_data.empty:
-                await redis_service.set_cached_data(cache_key, "ERROR", expiry=300)
+                await redis_service.set_cached_data(cache_key, "ERROR")
                 return None
 
             # Cache as dict for JSON serialization
@@ -163,16 +152,14 @@ class YFinanceService:
                 'data': hist_data.to_dict('list')
             }
 
-            await redis_service.set_cached_data(
-                cache_key, cache_data, expiry=self.cache_duration[CacheKey.HISTORICAL]
-            )
+            await redis_service.set_cached_data(cache_key, cache_data)
 
             return hist_data
 
         except Exception as e:
             logger.error(
                 "Error fetching historical data for %s: %s", ticker, e)
-            await redis_service.set_cached_data(cache_key, "ERROR", expiry=300)
+            await redis_service.set_cached_data(cache_key, "ERROR")
             return None
 
     async def get_bulk_historical_data(
@@ -203,7 +190,7 @@ class YFinanceService:
             hist_data = tickers_obj.history(period=period)
 
             if hist_data.empty:
-                await redis_service.set_cached_data(cache_key, "ERROR", expiry=300)
+                await redis_service.set_cached_data(cache_key, "ERROR")
                 return pd.DataFrame()
 
             # Cache the data
@@ -213,15 +200,13 @@ class YFinanceService:
                 'data': hist_data.values.tolist()
             }
 
-            await redis_service.set_cached_data(
-                cache_key, cache_data, expiry=self.cache_duration[CacheKey.HISTORICAL]
-            )
+            await redis_service.set_cached_data(cache_key, cache_data)
 
             return hist_data
 
         except Exception as e:
             logger.error("Error fetching bulk historical data: %s", e)
-            await redis_service.set_cached_data(cache_key, "ERROR", expiry=300)
+            await redis_service.set_cached_data(cache_key, "ERROR")
             return pd.DataFrame()
 
     # CHECKED OK
@@ -257,9 +242,7 @@ class YFinanceService:
                     continue
                 results.append(item)
 
-            await redis_service.set_cached_data(
-                cache_key, results, expiry=self.cache_duration[CacheKey.SEARCH]
-            )
+            await redis_service.set_cached_data(cache_key, results)
 
             return results[:limit]
 

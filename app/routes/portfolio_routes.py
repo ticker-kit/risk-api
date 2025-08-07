@@ -325,7 +325,7 @@ async def get_enhanced_portfolio(
         )
 
         # Cache the response for 5 minutes
-        await redis_service.set_cached_data(cache_key, response.dict(), expiry=300)
+        await redis_service.set_cached_data(cache_key, response.dict())
 
         return response
 
@@ -444,7 +444,7 @@ async def get_portfolio_market_data(
         )
 
         # Cache the response for 5 minutes
-        await redis_service.set_cached_data(cache_key, response.dict(), expiry=300)
+        await redis_service.set_cached_data(cache_key, response.dict())
 
         return response
 

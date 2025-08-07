@@ -1,6 +1,7 @@
 """Redis service for Pub/Sub functionality."""
 import json
 import asyncio
+from enum import Enum
 from typing import Optional, Any
 import fakeredis.aioredis
 import redis.asyncio as redis
@@ -10,6 +11,22 @@ from app.logger_service import logger
 # Channel names
 TICKER_UPDATES_CHANNEL = "ticker_updates"
 TICKER_PRICE_UPDATES_CHANNEL = "ticker_price_updates"
+
+
+class CacheKey(Enum):
+    """Cache keys for yfinance operations."""
+    TICKER_INFO = "ticker_info"
+    HISTORICAL = "historical"
+    SEARCH = "search"
+    BULK_HISTORICAL = "bulk_historical"
+    ENHANCED_PORTFOLIO = "enhanced_portfolio"
+    PORTFOLIO_MARKET_DATA = "portfolio_market_data"
+    TICKER_METRICS = "ticker_metrics"
+
+
+def construct_cache_key(key: CacheKey, *args: str) -> str:
+    """Construct a cache key from a key and a list of arguments."""
+    return f"{key.value}:{':'.join(args)}"
 
 
 class RedisService:

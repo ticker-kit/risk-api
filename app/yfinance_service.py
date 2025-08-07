@@ -3,30 +3,23 @@ YFinance service module - centralized yfinance interactions.
 """
 
 import logging
-from enum import Enum
 from typing import Dict, List, Optional,  Any
 
 import yfinance as yf
 import pandas as pd
 from fastapi import HTTPException
 
-from app.redis_service import redis_service
+from app.redis_service import redis_service, construct_cache_key, CacheKey
 from app.models.yfinance_models import TickerInfo
 
 logger = logging.getLogger(__name__)
-
-
-class CacheKey(Enum):
-    """Cache keys for yfinance operations."""
-    TICKER_INFO = "ticker_info"
-    HISTORICAL = "historical"
-    SEARCH = "search"
 
 
 class YFinanceService:
     """Service class for all yfinance operations."""
 
     async def validate_ticker(self, ticker: str):
+        """ Validate a ticker symbol. """
         if not ticker:
             raise HTTPException(
                 status_code=400, detail="Ticker symbol is required")
@@ -34,7 +27,7 @@ class YFinanceService:
         upper_ticker = ticker.upper().strip()
 
         # 1. Check cache first
-        cache_key = f"{CacheKey.TICKER_INFO}:{upper_ticker}"
+        cache_key = construct_cache_key(CacheKey.TICKER_INFO, upper_ticker)
         cached_result = await redis_service.get_cached_data(cache_key)
 
         if cached_result is not None:
@@ -59,7 +52,8 @@ class YFinanceService:
                 return
 
             # 2.2 Successfully validated ticker
-            cache_key_new = f"{CacheKey.TICKER_INFO}:{fetched_symbol}"
+            cache_key_new = construct_cache_key(
+                CacheKey.TICKER_INFO, fetched_symbol)
             await redis_service.set_cached_data(cache_key_new, info)
             return fetched_symbol
 
@@ -80,7 +74,7 @@ class YFinanceService:
         Raises:
             HTTPException: If ticker data cannot be retrieved
         """
-        cache_key = f"{CacheKey.TICKER_INFO}:{ticker.upper()}"
+        cache_key = construct_cache_key(CacheKey.TICKER_INFO, ticker.upper())
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data:
@@ -115,20 +109,19 @@ class YFinanceService:
     async def get_historical_data(
             self,
             ticker: str,
-            period: str = "1y",
-            auto_adjust: bool = False) -> Optional[pd.DataFrame]:
+            period: str = "1y") -> Optional[pd.DataFrame]:
         """
         Get historical data for a single ticker.
 
         Args:
             ticker: Ticker symbol
             period: Time period (1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max)
-            auto_adjust: Whether to auto-adjust prices for splits and dividends
 
         Returns:
             DataFrame with historical data or None if failed
         """
-        cache_key = f"{CacheKey.HISTORICAL}:{ticker.upper()}:{period}:{auto_adjust}"
+        cache_key = construct_cache_key(
+            CacheKey.HISTORICAL, ticker.upper(), period)
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data is not None:
@@ -140,7 +133,7 @@ class YFinanceService:
         try:
             ticker_obj = yf.Ticker(ticker)
             hist_data = ticker_obj.history(
-                period=period, auto_adjust=auto_adjust)
+                period=period, auto_adjust=True)
 
             if hist_data.empty:
                 await redis_service.set_cached_data(cache_key, "ERROR")
@@ -176,7 +169,9 @@ class YFinanceService:
         Returns:
             Multi-level DataFrame with historical data for all tickers
         """
-        cache_key = f"bulk_historical:{':'.join(sorted(tickers))}:{period}"
+
+        cache_key = construct_cache_key(
+            CacheKey.BULK_HISTORICAL, ':'.join(sorted(tickers)), period)
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data is not None:
@@ -226,7 +221,8 @@ class YFinanceService:
             raise HTTPException(
                 status_code=400, detail="Search query is required")
 
-        cache_key = f"{CacheKey.SEARCH}:{query_upper}"
+        cache_key = construct_cache_key(
+            CacheKey.SEARCH, query_upper)
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data:

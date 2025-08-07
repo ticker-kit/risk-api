@@ -36,15 +36,16 @@ async def get_ticker_data(ticker: str, refresh: bool = False):
         # Get ticker info
         info = await yfinance_service.get_ticker_info(ticker)
 
-    except HTTPException as e:
-        # Handle validation or service errors
-        logger.error(
-            "yfinance service error for ticker %s: %s", ticker, e.detail)
-        error_response = TickerMetricsResponse.to_cached_data(
-            ticker, error_msg=f"Unable to retrieve data for ticker: {ticker}"
-        )
-        await redis_service.set_cached_data(cache_key, error_response.model_dump())
-        return error_response
+        skip_fitted = info.get('quoteType') == 'FUTURE' or \
+            info.get('expireIsoDate') is not None or \
+            df['Close'].dropna()[df['Close'].dropna() <= 0].size > 0
+
+        if skip_fitted:
+            contracts_response = TickerMetricsResponse.to_cached_data(
+                ticker, error_msg="Page is not implemented yet for futures or contracts"
+            )
+            await redis_service.set_cached_data(cache_key, contracts_response.model_dump())
+            return contracts_response
 
     except Exception as e:
         # Handle unexpected errors

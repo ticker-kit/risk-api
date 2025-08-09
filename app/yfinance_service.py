@@ -204,14 +204,14 @@ class YFinanceService:
             await redis_service.set_cached_data(cache_key, "ERROR")
             return pd.DataFrame()
 
-    # CHECKED OK
-    async def search_tickers(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def search_tickers(self, query: str, max_results=8, fuzzy=False) -> List[Dict[str, Any]]:
         """
         Search for tickers by name or symbol.
 
         Args:
             query: Search query
-            limit: Maximum number of results
+            max_results: Maximum number of results
+            fuzzy: Whether to use fuzzy search
 
         Returns:
             List of ticker search results
@@ -222,14 +222,17 @@ class YFinanceService:
                 status_code=400, detail="Search query is required")
 
         cache_key = construct_cache_key(
-            CacheKey.SEARCH, query_upper)
+            CacheKey.SEARCH, query_upper, str(max_results), str(fuzzy))
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data:
-            return cached_data[:limit]
+            return cached_data
 
         try:
-            data = yf.Search(query).quotes
+            data = yf.Search(
+                query,
+                max_results=max_results,
+                enable_fuzzy_query=fuzzy).quotes
             results = []
 
             for item in data:
@@ -240,7 +243,7 @@ class YFinanceService:
 
             await redis_service.set_cached_data(cache_key, results)
 
-            return results[:limit]
+            return results
 
         except Exception as e:
             logger.error(

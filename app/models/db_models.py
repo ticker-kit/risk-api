@@ -8,7 +8,7 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(primary_key=True)
     username: str = Field(index=True, unique=True)
     hashed_password: str
-    currency: str = Field(
+    currency: Optional[str] = Field(
         default="EUR", description="User's preferred currency")
     positions: List["AssetPosition"] = Relationship(back_populates="owner")
 

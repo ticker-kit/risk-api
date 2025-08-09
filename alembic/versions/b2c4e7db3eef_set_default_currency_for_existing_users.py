@@ -22,9 +22,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.execute("UPDATE user SET currency = 'EUR' WHERE currency IS NULL")
+    op.execute('UPDATE "user" SET currency = \'EUR\' WHERE currency IS NULL')
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # Note: This migration sets default values, so downgrade doesn't need to do anything
+    # The currency field will remain as is
     pass

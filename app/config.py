@@ -39,7 +39,8 @@ class Settings:
             "JWT_SECRET_KEY")
 
         # CORS
-        self.cors_origin: str = self._get_env_var("CORS_ORIGIN")
+        self.cors_origin: list[str] = self._get_env_var(
+            "CORS_ORIGIN").split(",")
 
         # Risk Worker URL
         self.risk_worker_url: str = self._get_env_var("RISK_WORKER_URL")

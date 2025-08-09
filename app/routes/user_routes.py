@@ -140,64 +140,55 @@ async def update_home_currency(
         current_user: User = Depends(get_current_user)):
     """ Update the home currency for a user. """
 
-    print("0")
+    # 0. normalize currency
+    input_currency = code.upper().strip()
 
-    new_currency = code.upper().strip()
     # 1. get current user currency
     current_currency = "ZMB"
 
-    print("1")
-
     # 2. check not the same
-    if current_currency == new_currency:
+    if current_currency == input_currency:
         raise HTTPException(
-            status_code=400, detail="New currency is the same as current currency")
-
-    print("2")
+            status_code=400, detail="Input currency is the same as current currency")
 
     # 3. check its 3 latin characters
-    if not re.match(r'^[A-Z]{3}$', new_currency):
+    if not re.match(r'^[A-Z]{3}$', input_currency):
         raise HTTPException(
             status_code=400, detail="Invalid currency format")
 
-    print("3")
-    # check valid currency
-    # validation_ticker = new_currency + \
-    #     ("USD" if new_currency != "USD" else "EUR") + "=X"
-    validation_ticker_usd = f"USD{new_currency}=X"
-    validation_ticker_eur = f"EUR{new_currency}=X"
-    print(f"Validation ticker usd: {validation_ticker_usd}")
-    print(f"Validation ticker eur: {validation_ticker_eur}")
-    validated_currency = await yfinance_service.validate_ticker(validation_ticker_usd)
-    if not validated_currency:
-        validated_currency = await yfinance_service.validate_ticker(validation_ticker_eur)
-    print(validated_currency)
+    if input_currency == "USD" or input_currency == "EUR":
+        return HomeCurrencyResponse(
+            new_currency=input_currency,
+            success=True,
+        ).__dict__
+
+    validation_ticker_eur = f"EUR{input_currency}=X"
+
+    validated_currency = await yfinance_service.validate_ticker(validation_ticker_eur)
+
     is_valid_currency = validated_currency is not None
 
-    print(f"Is valid currency: {is_valid_currency}")
+    if is_valid_currency:
+        return HomeCurrencyResponse(
+            new_currency=input_currency,
+            success=True,
+        ).__dict__
 
-    if not is_valid_currency:
+    else:
         # get recommendations
-        recommendations_usd = await yfinance_service.search_tickers(
-            validation_ticker_usd, fuzzy=True)
-        recommendations_eur = await yfinance_service.search_tickers(
+        recommendations_quotes = await yfinance_service.search_tickers(
             validation_ticker_eur, fuzzy=True)
 
-        recommendations_combo = recommendations_usd + recommendations_eur
-
         recommendations = list(set(
-            [item["longname"].split("/")[1] for item in recommendations_combo if item["quoteType"] == "CURRENCY"]))
-    else:
-        recommendations = None
+            [item["longname"].split("/")[1] for item in recommendations_quotes
+                if item["quoteType"] == "CURRENCY"]))
 
-    print(f"Recommendations: {recommendations}")
-
-    print("F")
-
-    return {
-        "new_currency": new_currency,
-        "success": True,
-    }
+        return HomeCurrencyResponse(
+            new_currency=input_currency,
+            success=False,
+            message=f"Currency {input_currency} not found.",
+            recommendations=recommendations
+        ).__dict__
 
 
 @router.get("/users")

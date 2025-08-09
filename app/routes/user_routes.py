@@ -159,7 +159,8 @@ async def validate_home_currency(
         )
 
     # TODO: Get user currency from database when implemented
-    user_currency = "ZMB"  # Hardcoded for now
+    user_currency = session.exec(select(User.currency).where(
+        User.id == current_user.id)).first()
 
     # Check if currency is the same as user currency
     if user_currency == input_currency:

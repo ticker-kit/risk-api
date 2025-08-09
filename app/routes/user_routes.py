@@ -158,14 +158,15 @@ async def validate_home_currency(
             detail="Invalid currency format. Must be 3 uppercase letters (e.g., USD, EUR, GBP)"
         )
 
-    # TODO: Get current user currency from database when implemented
-    current_currency = "ZMB"  # Hardcoded for now
+    # TODO: Get user currency from database when implemented
+    user_currency = "ZMB"  # Hardcoded for now
 
-    # Check if currency is the same as current
-    if current_currency == input_currency:
+    # Check if currency is the same as user currency
+    if user_currency == input_currency:
         raise HTTPException(
             status_code=400,
-            detail=f"Input currency {input_currency} is the same as current currency {current_currency}"
+            detail=f"Input currency {input_currency} is the same as " +
+            f"user currency {user_currency}"
         )
 
     # Fast path for common currencies
@@ -215,7 +216,8 @@ async def validate_home_currency(
 
         except Exception as search_error:
             logger.error(
-                "Error searching for currency recommendations for %s: %s", input_currency, search_error)
+                "Error searching for currency recommendations for %s: %s",
+                input_currency, search_error)
             # If recommendations fail, return error without recommendations
             return HomeCurrencyResponse(
                 new_currency=input_currency,

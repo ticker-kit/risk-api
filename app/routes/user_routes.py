@@ -1,4 +1,5 @@
 """ User routes for the application. """
+from typing import Optional
 from dataclasses import dataclass
 import re
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,8 +9,18 @@ from app.db import get_session
 
 from app.models.db_models import User
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
+from app.yfinance_service import yfinance_service
 
 router = APIRouter()
+
+
+@dataclass
+class HomeCurrencyResponse:
+    """Response for home currency endpoints."""
+    new_currency: str
+    success: bool
+    message: Optional[str] = None
+    recommendations: Optional[list[str]] = None
 
 
 @dataclass
@@ -120,6 +131,73 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
         message="Login successful",
         access_token=create_access_token({"sub": user.username})
     ).to_dict()
+
+
+@router.get("/home_currency")
+async def update_home_currency(
+    code: str,
+        session: Session = Depends(get_session),
+        current_user: User = Depends(get_current_user)):
+    """ Update the home currency for a user. """
+
+    print("0")
+
+    new_currency = code.upper().strip()
+    # 1. get current user currency
+    current_currency = "ZMB"
+
+    print("1")
+
+    # 2. check not the same
+    if current_currency == new_currency:
+        raise HTTPException(
+            status_code=400, detail="New currency is the same as current currency")
+
+    print("2")
+
+    # 3. check its 3 latin characters
+    if not re.match(r'^[A-Z]{3}$', new_currency):
+        raise HTTPException(
+            status_code=400, detail="Invalid currency format")
+
+    print("3")
+    # check valid currency
+    # validation_ticker = new_currency + \
+    #     ("USD" if new_currency != "USD" else "EUR") + "=X"
+    validation_ticker_usd = f"USD{new_currency}=X"
+    validation_ticker_eur = f"EUR{new_currency}=X"
+    print(f"Validation ticker usd: {validation_ticker_usd}")
+    print(f"Validation ticker eur: {validation_ticker_eur}")
+    validated_currency = await yfinance_service.validate_ticker(validation_ticker_usd)
+    if not validated_currency:
+        validated_currency = await yfinance_service.validate_ticker(validation_ticker_eur)
+    print(validated_currency)
+    is_valid_currency = validated_currency is not None
+
+    print(f"Is valid currency: {is_valid_currency}")
+
+    if not is_valid_currency:
+        # get recommendations
+        recommendations_usd = await yfinance_service.search_tickers(
+            validation_ticker_usd, fuzzy=True)
+        recommendations_eur = await yfinance_service.search_tickers(
+            validation_ticker_eur, fuzzy=True)
+
+        recommendations_combo = recommendations_usd + recommendations_eur
+
+        recommendations = list(set(
+            [item["longname"].split("/")[1] for item in recommendations_combo if item["quoteType"] == "CURRENCY"]))
+    else:
+        recommendations = None
+
+    print(f"Recommendations: {recommendations}")
+
+    print("F")
+
+    return {
+        "new_currency": new_currency,
+        "success": True,
+    }
 
 
 @router.get("/users")

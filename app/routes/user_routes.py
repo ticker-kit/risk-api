@@ -1,4 +1,5 @@
 """ User routes for the application. """
+import logging
 from typing import Optional
 from dataclasses import dataclass
 import re
@@ -11,6 +12,7 @@ from app.models.db_models import User
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
 from app.yfinance_service import yfinance_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -67,7 +69,9 @@ def register(form: OAuth2PasswordRequestForm = Depends(), session: Session = Dep
     try:
         existing_user = session.exec(select(User).where(
             User.username == norm_username)).first()
-    except Exception:
+    except Exception as e:
+        logger.error("Error checking if username %s exists: %s",
+                     norm_username, e)
         return AuthResponse(
             success=False,
             message="Something went wrong while checking if username exists",
@@ -94,7 +98,8 @@ def register(form: OAuth2PasswordRequestForm = Depends(), session: Session = Dep
             access_token=create_access_token({"sub": norm_username})
         ).to_dict()
 
-    except Exception:
+    except Exception as e:
+        logger.error("Error creating new user %s: %s", norm_username, e)
         session.rollback()
         return AuthResponse(
             success=False,
@@ -112,7 +117,9 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
     try:
         user = session.exec(select(User).where(
             User.username == norm_username)).first()
-    except Exception:
+    except Exception as e:
+        logger.error("Error fetching user %s during login: %s",
+                     norm_username, e)
         return AuthResponse(
             success=False,
             message="Something went wrong while fetching user",
@@ -134,60 +141,96 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
 
 
 @router.get("/home_currency")
-async def update_home_currency(
+async def validate_home_currency(
     code: str,
-        session: Session = Depends(get_session),
-        current_user: User = Depends(get_current_user)):
-    """ Update the home currency for a user. """
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Validate a currency code for use as home currency."""
 
-    # 0. normalize currency
+    # Normalize currency code
     input_currency = code.upper().strip()
 
-    # 1. get current user currency
-    current_currency = "ZMB"
-
-    # 2. check not the same
-    if current_currency == input_currency:
-        raise HTTPException(
-            status_code=400, detail="Input currency is the same as current currency")
-
-    # 3. check its 3 latin characters
+    # Validate currency format (3 uppercase letters)
     if not re.match(r'^[A-Z]{3}$', input_currency):
         raise HTTPException(
-            status_code=400, detail="Invalid currency format")
+            status_code=400,
+            detail="Invalid currency format. Must be 3 uppercase letters (e.g., USD, EUR, GBP)"
+        )
 
-    if input_currency == "USD" or input_currency == "EUR":
+    # TODO: Get current user currency from database when implemented
+    current_currency = "ZMB"  # Hardcoded for now
+
+    # Check if currency is the same as current
+    if current_currency == input_currency:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Input currency {input_currency} is the same as current currency {current_currency}"
+        )
+
+    # Fast path for common currencies
+    if input_currency in ["USD", "EUR"]:
         return HomeCurrencyResponse(
             new_currency=input_currency,
-            success=True,
-        ).__dict__
+            success=True).__dict__
 
-    validation_ticker_eur = f"EUR{input_currency}=X"
+    # Validate currency using yfinance
+    validation_ticker = f"EUR{input_currency}=X"
+    try:
+        validated_currency = await yfinance_service.validate_ticker(validation_ticker)
 
-    validated_currency = await yfinance_service.validate_ticker(validation_ticker_eur)
+        if validated_currency:
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=True).__dict__
 
-    is_valid_currency = validated_currency is not None
+        # Currency not found - get recommendations
+        try:
+            recommendations_quotes = await yfinance_service.search_tickers(
+                validation_ticker, fuzzy=True
+            )
 
-    if is_valid_currency:
-        return HomeCurrencyResponse(
-            new_currency=input_currency,
-            success=True,
-        ).__dict__
+            recommendations = []
+            for item in recommendations_quotes:
+                if item.get("quoteType") == "CURRENCY" and item.get("longname"):
+                    try:
+                        # Extract currency code from longname (e.g., "EUR/USD" -> "USD")
+                        currency_part = item["longname"].split("/")[-1]
+                        if currency_part and currency_part != input_currency:
+                            recommendations.append(currency_part)
+                    except (IndexError, AttributeError) as parse_error:
+                        logger.debug(
+                            "Failed to parse currency from item %s: %s", item, parse_error)
+                        # Skip items that don't have the expected format
+                        continue
 
-    else:
-        # get recommendations
-        recommendations_quotes = await yfinance_service.search_tickers(
-            validation_ticker_eur, fuzzy=True)
+            # Remove duplicates while preserving order
+            recommendations = list(dict.fromkeys(recommendations))
 
-        recommendations = list(set(
-            [item["longname"].split("/")[1] for item in recommendations_quotes
-                if item["quoteType"] == "CURRENCY"]))
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=False,
+                message=f"Currency {input_currency} not found.",
+                recommendations=recommendations).__dict__
 
+        except Exception as search_error:
+            logger.error(
+                "Error searching for currency recommendations for %s: %s", input_currency, search_error)
+            # If recommendations fail, return error without recommendations
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=False,
+                message=f"Error while searching for currency {input_currency} recommendations."
+            ).__dict__
+
+    except Exception as e:
+        logger.error("Error validating home currency %s: %s",
+                     input_currency, e)
+        # If recommendations fail, return error without recommendations
         return HomeCurrencyResponse(
             new_currency=input_currency,
             success=False,
-            message=f"Currency {input_currency} not found.",
-            recommendations=recommendations
+            message=f"Error while validating currency {input_currency}."
         ).__dict__
 
 
@@ -206,5 +249,6 @@ def list_users(
         users = session.exec(select(User)).all()
         return [{"id": user.id, "username": user.username} for user in users]
     except Exception as e:
+        logger.error("Error fetching users list: %s", e)
         raise HTTPException(
             status_code=500, detail="Something went wrong while fetching users") from e

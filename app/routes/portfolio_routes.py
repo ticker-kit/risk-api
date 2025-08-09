@@ -167,7 +167,7 @@ async def delete_position(
 async def search_ticker(q: str = Query(..., min_length=1, max_length=30)):
     """ Search for tickers by name or symbol using yfinance.Search. """
     try:
-        results = await yfinance_service.search_tickers(q, limit=10)
+        results = await yfinance_service.search_tickers(q)
         return results
 
     except Exception as e:

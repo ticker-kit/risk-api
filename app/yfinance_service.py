@@ -4,8 +4,10 @@ YFinance service module - centralized yfinance interactions.
 
 import logging
 from typing import Dict, List, Optional,  Any
+from io import StringIO
 
 import yfinance as yf
+from yfinance.utils import is_valid_period_format
 import pandas as pd
 from fastapi import HTTPException
 
@@ -109,7 +111,7 @@ class YFinanceService:
     async def get_historical_data(
             self,
             ticker: str,
-            period: str = "1y") -> Optional[pd.DataFrame]:
+            period: str = "1wk") -> Optional[pd.DataFrame]:
         """
         Get historical data for a single ticker.
 
@@ -120,6 +122,13 @@ class YFinanceService:
         Returns:
             DataFrame with historical data or None if failed
         """
+
+        if not is_valid_period_format(period):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid period format for {ticker}: {period}"
+            )
+
         cache_key = construct_cache_key(
             CacheKey.HISTORICAL, ticker.upper(), period)
         cached_data = await redis_service.get_cached_data(cache_key)
@@ -128,7 +137,7 @@ class YFinanceService:
             if cached_data == "ERROR":
                 return None
             # Convert back to DataFrame
-            return pd.DataFrame(cached_data)
+            return pd.read_json(StringIO(cached_data), orient="split")
 
         try:
             ticker_obj = yf.Ticker(ticker)
@@ -139,13 +148,7 @@ class YFinanceService:
                 await redis_service.set_cached_data(cache_key, "ERROR")
                 return None
 
-            # Cache as dict for JSON serialization
-            cache_data = {
-                'index': [d.isoformat() for d in hist_data.index],
-                'data': hist_data.to_dict('list')
-            }
-
-            await redis_service.set_cached_data(cache_key, cache_data)
+            await redis_service.set_cached_data(cache_key, hist_data.to_json(orient="split"))
 
             return hist_data
 
@@ -158,7 +161,7 @@ class YFinanceService:
     async def get_bulk_historical_data(
             self,
             tickers: List[str],
-            period: str = "1y") -> pd.DataFrame:
+            period: str = "1wk") -> pd.DataFrame:
         """
         Get historical data for multiple tickers efficiently.
 

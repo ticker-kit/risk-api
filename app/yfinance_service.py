@@ -20,143 +20,108 @@ logger = logging.getLogger(__name__)
 class YFinanceService:
     """Service class for all yfinance operations."""
 
+    def adjust_ticker(self, ticker: str) -> str:
+        """ Adjust a ticker symbol. """
+        if not ticker.strip():
+            raise ValueError(f"Error: Ticker symbol is required `{ticker}`")
+
+        return ticker.upper().strip()
+
     async def validate_ticker(self, ticker: str):
         """ Validate a ticker symbol. """
-        if not ticker:
-            raise HTTPException(
-                status_code=400, detail="Ticker symbol is required")
 
-        upper_ticker = ticker.upper().strip()
+        upper_ticker = self.adjust_ticker(ticker)
 
-        # 1. Check cache first
-        cache_key = construct_cache_key(CacheKey.TICKER_INFO, upper_ticker)
-        cached_result = await redis_service.get_cached_data(cache_key)
-
-        if cached_result is not None:
-            cached_result_symbol: str = cached_result.get('symbol')
-            if not cached_result_symbol:
-                return
-            return cached_result_symbol
-
-        # 2. Validate with yfinance
         try:
-            yf_ticker = yf.Ticker(upper_ticker)
-
-            # 2.1. Unsuccessful ticker
-            info = yf_ticker.info
-
-            if not info:
-                return
-
-            fetched_symbol: str = info.get('symbol')
-
-            if not fetched_symbol:
-                return
-
-            # 2.2 Successfully validated ticker
-            cache_key_new = construct_cache_key(
-                CacheKey.TICKER_INFO, fetched_symbol)
-            await redis_service.set_cached_data(cache_key_new, info)
-            return fetched_symbol
+            await self.get_ticker_info(upper_ticker)
+            return upper_ticker
 
         except Exception as e:
-            logger.error("Error validating ticker %s: %s", ticker, e)
-            return
+            raise Exception(str(e)) from e
 
-    async def get_ticker_info(self, ticker: str) -> TickerInfo:
+    async def get_ticker_info(self, ticker: str, only_validated: bool = True) -> Dict[str, Any]:
         """
         Get ticker information from yfinance.
-
-        Args:
-            ticker: Ticker symbol
-
-        Returns:
-            Dict containing ticker information
-
-        Raises:
-            HTTPException: If ticker data cannot be retrieved
+        Returns: Dict containing ticker information as a TickerInfo model
         """
-        cache_key = construct_cache_key(CacheKey.TICKER_INFO, ticker.upper())
+        ticker = self.adjust_ticker(ticker)
+        cache_key = construct_cache_key(CacheKey.TICKER_INFO, ticker)
         cached_data = await redis_service.get_cached_data(cache_key)
 
         if cached_data:
-            return cached_data
+            return TickerInfo(**cached_data).model_dump() if only_validated else cached_data
 
         try:
             info = yf.Ticker(ticker).info
 
-            if not info:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No information available for ticker: {ticker}"
-                )
+            if not info or info.get('symbol') is None:
+                raise ValueError(
+                    f"No information available for ticker: {ticker}")
 
-            # Clean info data (remove large unnecessary fields)
-            cleaned_info = {k: v for k, v in info.items() if k not in [
-                'companyOfficers', 'fullTimeEmployees', 'longBusinessSummary'
-            ] and not (isinstance(v, (list, dict)) and len(str(v)) > 1000)}
+            # Validate the info
+            validated_info = TickerInfo(**info)
 
-            # Cache the result
-            await redis_service.set_cached_data(cache_key, cleaned_info)
+            # Cache whole info
+            await redis_service.set_cached_data(cache_key, info)
 
-            return cleaned_info
+            return validated_info.model_dump() if only_validated else info
+
+        except ValueError as e:
+            raise Exception(str(e)) from e
 
         except Exception as e:
-            logger.error("Error fetching ticker info for %s: %s", ticker, e)
-            raise HTTPException(
-                status_code=503,
-                detail=f"Unable to retrieve info for ticker: {ticker}"
-            ) from e
+            msg = f"Error: Something went wrong fetching ticker info for {ticker}"
+            logger.error("%s: %s", msg, str(e))
+            raise Exception(msg) from e
 
     async def get_historical_data(
             self,
             ticker: str,
-            period: str = "1wk") -> Optional[pd.DataFrame]:
-        """
-        Get historical data for a single ticker.
+            period: str = "1wk") -> pd.DataFrame:
 
-        Args:
-            ticker: Ticker symbol
-            period: Time period (1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max)
+        # Adjust the ticker
+        ticker = self.adjust_ticker(ticker)
 
-        Returns:
-            DataFrame with historical data or None if failed
-        """
+        # Check if the ticker is valid
+        await self.get_ticker_info(ticker)
 
+        # Check if the period is valid
         if not is_valid_period_format(period):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid period format for {ticker}: {period}"
-            )
+            raise ValueError(f"Invalid period format for {ticker}: {period}")
 
-        cache_key = construct_cache_key(
-            CacheKey.HISTORICAL, ticker.upper(), period)
+        # Get the cache key
+        cache_key = construct_cache_key(CacheKey.HISTORICAL, ticker, period)
+
+        # Return the cached data if it exists
         cached_data = await redis_service.get_cached_data(cache_key)
-
         if cached_data is not None:
-            if cached_data == "ERROR":
-                return None
-            # Convert back to DataFrame
             return pd.read_json(StringIO(cached_data), orient="split")
 
+        # Fetch the historical data
         try:
             ticker_obj = yf.Ticker(ticker)
             hist_data = ticker_obj.history(
                 period=period, auto_adjust=True)
 
             if hist_data.empty:
-                await redis_service.set_cached_data(cache_key, "ERROR")
-                return None
+                raise RuntimeError(
+                    f"Error: No historical data found for ticker `{ticker}`")
+
+            if 'Close' not in hist_data.columns:
+                raise RuntimeError(
+                    f"Error: Close column not found in historical data for ticker `{ticker}`")
 
             await redis_service.set_cached_data(cache_key, hist_data.to_json(orient="split"))
 
             return hist_data
 
+        except RuntimeError as e:
+            raise Exception(str(e)) from e
+
         except Exception as e:
-            logger.error(
-                "Error fetching historical data for %s: %s", ticker, e)
-            await redis_service.set_cached_data(cache_key, "ERROR")
-            return None
+            msg = f"Error: fetching historical data for {ticker}"
+            logger.error("%s: %s", msg, str(e))
+            raise Exception(msg) from e
 
     async def get_bulk_historical_data(
             self,

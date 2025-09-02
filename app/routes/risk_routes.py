@@ -12,8 +12,11 @@ router = APIRouter()
 
 
 @router.get("/ticker/{ticker}", response_model=TickerMetricsResponse)
-async def get_ticker_data(ticker: str):
+async def get_ticker_data(ticker: str, currency: str | None = None):
     """ Calculate risk metrics from a stock ticker. """
+
+    print(ticker)
+    print(currency)
 
     ticker = yfinance_service.adjust_ticker(ticker)
 

@@ -30,6 +30,7 @@ class AuthResponse:
     """Response for auth endpoints."""
     success: bool
     message: str
+    currency: str | None
     access_token: str | None
 
     def to_dict(self):
@@ -37,6 +38,7 @@ class AuthResponse:
         return {
             "success": self.success,
             "message": self.message,
+            "currency": self.currency,
             "access_token": self.access_token
         }
 
@@ -62,7 +64,8 @@ def register(form: OAuth2PasswordRequestForm = Depends(), session: Session = Dep
         return AuthResponse(
             success=False,
             message="Invalid username: must be alphanumeric, no spaces, min 3 chars, max 15 chars.",
-            access_token=None
+            access_token=None,
+            currency=None
         ).to_dict()
 
     # Check if username already exists
@@ -75,14 +78,16 @@ def register(form: OAuth2PasswordRequestForm = Depends(), session: Session = Dep
         return AuthResponse(
             success=False,
             message="Something went wrong while checking if username exists",
-            access_token=None
+            access_token=None,
+            currency=None
         ).to_dict()
 
     if existing_user:
         return AuthResponse(
             success=False,
             message="Username already exists",
-            access_token=None
+            access_token=None,
+            currency=existing_user.currency
         ).to_dict()
 
     # Create new user
@@ -95,7 +100,8 @@ def register(form: OAuth2PasswordRequestForm = Depends(), session: Session = Dep
         return AuthResponse(
             success=True,
             message="User registered successfully",
-            access_token=create_access_token({"sub": norm_username})
+            access_token=create_access_token({"sub": norm_username}),
+            currency=new_user.currency
         ).to_dict()
 
     except Exception as e:
@@ -104,7 +110,8 @@ def register(form: OAuth2PasswordRequestForm = Depends(), session: Session = Dep
         return AuthResponse(
             success=False,
             message="Something went wrong while registering user",
-            access_token=None
+            access_token=None,
+            currency=None
         ).to_dict()
 
 
@@ -123,20 +130,23 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
         return AuthResponse(
             success=False,
             message="Something went wrong while fetching user",
-            access_token=None
+            access_token=None,
+            currency=None
         ).to_dict()
 
     if user is None or not verify_password(form.password, user.hashed_password):
         return AuthResponse(
             success=False,
             message="Invalid credentials",
-            access_token=None
+            access_token=None,
+            currency=None
         ).to_dict()
 
     return AuthResponse(
         success=True,
         message="Login successful",
-        access_token=create_access_token({"sub": user.username})
+        access_token=create_access_token({"sub": user.username}),
+        currency=user.currency
     ).to_dict()
 
 
@@ -158,7 +168,6 @@ async def validate_home_currency(
             detail="Invalid currency format. Must be 3 uppercase letters (e.g., USD, EUR, GBP)"
         )
 
-    # TODO: Get user currency from database when implemented
     user_currency = session.exec(select(User.currency).where(
         User.id == current_user.id)).first()
 

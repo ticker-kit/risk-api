@@ -37,6 +37,10 @@ class TickerInfo(BaseModel):
 
     ask: Optional[float] = None
     bid: Optional[float] = None
+    previousClose: Optional[float] = None
+    regularMarketPrice: Optional[float] = None
+    fiftyTwoWeekLow: Optional[float] = None
+    fiftyTwoWeekHigh: Optional[float] = None
     country: Optional[str] = None
     beta: Optional[float] = None
     expireIsoDate: Optional[str] = None
@@ -49,3 +53,5 @@ class TickerInfo(BaseModel):
     category: Optional[str] = None
     fundFamily: Optional[str] = None
     regularMarketChangePercent: Optional[float] = None
+    volume: Optional[int] = None
+    regularMarketVolume: Optional[int] = None

@@ -143,6 +143,7 @@ class AssetAnalysis():
 
     def get_log_returns(self):
         """Returns the log returns"""
+
         if self.__has_negative_close:
             return None
 

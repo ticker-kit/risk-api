@@ -78,6 +78,7 @@ class YFinanceService:
             self,
             ticker: str,
             period: str = "1wk") -> pd.DataFrame:
+        """Get historical data for a ticker"""
 
         # Adjust the ticker
         ticker = self.adjust_ticker(ticker)

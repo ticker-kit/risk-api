@@ -72,6 +72,10 @@ class AssetAnalysis():
                 # Drop rows where either Close or currency_close is NaN
                 self.__history = self.__history.dropna(
                     subset=['Close', 'currency_close'])
+                if self.__history.empty:
+                    raise ValueError(
+                        f"No history data after converting `{self.__ticker}` to currency `{currency_ticker}`")
+
                 self.__history['Close'] = self.__history['Close'] * \
                     self.__history['currency_close']
                 self.__history.drop(columns=['currency_close'], inplace=True)

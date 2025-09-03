@@ -15,15 +15,15 @@ router = APIRouter()
 async def get_ticker_data(ticker: str, currency: str | None = None):
     """ Calculate risk metrics from a stock ticker. """
 
-    print(ticker)
-    print(currency)
+    print(f"ticker: {ticker}")
+    print(f"currency: {currency}")
 
     ticker = yfinance_service.adjust_ticker(ticker)
 
     # cache_key = construct_cache_key(CacheKey.TICKER_METRICS, ticker)
 
     try:
-        initial_asset_data = await create_asset_analysis(ticker, period="10y")
+        initial_asset_data = await create_asset_analysis(ticker, period="10y", currency=currency)
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

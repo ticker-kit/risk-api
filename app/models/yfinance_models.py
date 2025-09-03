@@ -3,7 +3,7 @@ Yfinance models for the application.
 More fields can be added as needed.
 May break if yfinance changes the fields.
 """
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 
@@ -55,3 +55,15 @@ class TickerInfo(BaseModel):
     regularMarketChangePercent: Optional[float] = None
     volume: Optional[int] = None
     regularMarketVolume: Optional[int] = None
+
+
+class HistoryDict(BaseModel):
+    Open: List[float]
+    High: List[float]
+    Low: List[float]
+    Close: List[float]
+    Volume: List[int]
+    Dividends: List[float]
+    # 'Stock Splits': List[float]
+    # 'Capital Gains': List[float]
+    index: List[str]

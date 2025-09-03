@@ -1,7 +1,7 @@
 """Base model for asset analysis"""
 from typing import Optional
-import numpy as np
 import logging
+import numpy as np
 import pandas as pd
 from app.yfinance_service import yfinance_service
 from app.models.asset_period import AssetPeriod
@@ -10,9 +10,9 @@ from app.functions.stat_functions import get_fitted_values
 logger = logging.getLogger(__name__)
 
 
-async def create_asset_analysis(ticker: str, period: str = "1wk"):
+async def create_asset_analysis(ticker: str, period: str = "1wk", currency: str | None = None):
     """Create an asset analysis instance"""
-    asset_analysis = AssetAnalysis(ticker, period)
+    asset_analysis = AssetAnalysis(ticker, period, currency)
     await asset_analysis.init()
     return asset_analysis
 
@@ -29,7 +29,7 @@ class CloseFitted():
 class AssetAnalysis():
     """Base model for asset analysis"""
 
-    def __init__(self, ticker: str, period: str = "1wk"):
+    def __init__(self, ticker: str, period: str = "1wk", currency: str | None = None):
         if not ticker.strip():
             raise ValueError("Ticker is required")
 
@@ -38,6 +38,7 @@ class AssetAnalysis():
 
         self.__ticker = ticker
         self.__period = period
+        self.__currency = currency
 
         self.__info: Optional[dict] = None
         # columns': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
@@ -55,6 +56,25 @@ class AssetAnalysis():
             self.__info = await yfinance_service.get_ticker_info(self.__ticker)
 
             self.__history = await yfinance_service.get_historical_data(self.__ticker, self.__period)
+
+            currency_ticker = None
+            if self.__currency is not None:
+                if self.__currency == self.__info.get('currency'):
+                    raise ValueError(
+                        "Currency selected is the same as the ticker currency")
+                else:
+                    currency_ticker = f"{self.__currency}{self.__info.get('currency')}=X"
+
+            if currency_ticker is not None:
+                currency_history = await yfinance_service.get_historical_data(currency_ticker, self.__period)
+
+                self.__history['currency_close'] = currency_history['Close']
+                # Drop rows where either Close or currency_close is NaN
+                self.__history = self.__history.dropna(
+                    subset=['Close', 'currency_close'])
+                self.__history['Close'] = self.__history['Close'] * \
+                    self.__history['currency_close']
+                self.__history.drop(columns=['currency_close'], inplace=True)
 
             self.__expires = self.__info.get('expireIsoDate') is not None
 

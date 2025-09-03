@@ -200,75 +200,86 @@ async def change_home_currency(
 
     # Validate currency using yfinance
     validation_ticker = f"EUR{input_currency}=X"
+    validated_currency = False
+    validation_error = None
+    
+    # Try to validate the currency
     try:
         validated_currency = await yfinance_service.validate_ticker(validation_ticker)
-
-        if validated_currency:
-            try:
-                # Update user's currency in database
-                current_user.currency = input_currency
-                session.add(current_user)
-                session.commit()
-                return HomeCurrencyResponse(
-                    new_currency=input_currency,
-                    success=True,
-                    message=f"Home currency successfully changed to {input_currency}").__dict__
-            except Exception as e:
-                session.rollback()
-                logger.error("Error updating user currency to %s: %s", input_currency, e)
-                return HomeCurrencyResponse(
-                    new_currency=input_currency,
-                    success=False,
-                    message=f"Error updating currency to {input_currency}").__dict__
-
-        # Currency not found - get recommendations
-        try:
-            recommendations_quotes = await yfinance_service.search_tickers(
-                validation_ticker, fuzzy=True
-            )
-
-            recommendations = []
-            for item in recommendations_quotes:
-                if item.get("quoteType") == "CURRENCY" and item.get("longname"):
-                    try:
-                        # Extract currency code from longname (e.g., "EUR/USD" -> "USD")
-                        currency_part = item["longname"].split("/")[-1]
-                        if currency_part and currency_part != input_currency:
-                            recommendations.append(currency_part)
-                    except (IndexError, AttributeError) as parse_error:
-                        logger.debug(
-                            "Failed to parse currency from item %s: %s", item, parse_error)
-                        # Skip items that don't have the expected format
-                        continue
-
-            # Remove duplicates while preserving order
-            recommendations = list(dict.fromkeys(recommendations))
-
-            return HomeCurrencyResponse(
-                new_currency=input_currency,
-                success=False,
-                message=f"Currency {input_currency} not found.",
-                recommendations=recommendations).__dict__
-
-        except Exception as search_error:
-            logger.error(
-                "Error searching for currency recommendations for %s: %s",
-                input_currency, search_error)
-            # If recommendations fail, return error without recommendations
-            return HomeCurrencyResponse(
-                new_currency=input_currency,
-                success=False,
-                message=f"Error while searching for currency {input_currency} recommendations."
-            ).__dict__
-
     except Exception as e:
-        logger.error("Error validating home currency %s: %s",
-                     input_currency, e)
-        # If recommendations fail, return error without recommendations
+        validation_error = e
+        logger.error("Error validating home currency %s: %s", input_currency, e)
+        validated_currency = False
+
+    # If validation succeeded, update the currency
+    if validated_currency:
+        try:
+            # Update user's currency in database
+            current_user.currency = input_currency
+            session.add(current_user)
+            session.commit()
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=True,
+                message=f"Home currency successfully changed to {input_currency}").__dict__
+        except Exception as e:
+            session.rollback()
+            logger.error("Error updating user currency to %s: %s", input_currency, e)
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=False,
+                message=f"Error updating currency to {input_currency}").__dict__
+
+    # Currency not validated - get recommendations
+    try:
+        recommendations_quotes = await yfinance_service.search_tickers(
+            validation_ticker, fuzzy=True
+        )
+
+        recommendations = []
+        for item in recommendations_quotes:
+            if item.get("quoteType") == "CURRENCY" and item.get("longname"):
+                try:
+                    # Extract currency code from longname (e.g., "EUR/USD" -> "USD")
+                    currency_part = item["longname"].split("/")[-1]
+                    if currency_part and currency_part != input_currency:
+                        recommendations.append(currency_part)
+                except (IndexError, AttributeError) as parse_error:
+                    logger.debug(
+                        "Failed to parse currency from item %s: %s", item, parse_error)
+                    # Skip items that don't have the expected format
+                    continue
+
+        # Remove duplicates while preserving order
+        recommendations = list(dict.fromkeys(recommendations))
+
+        # Provide appropriate message based on whether validation failed due to exception or not found
+        if validation_error:
+            message = f"Could not validate currency {input_currency} due to service error, but here are some suggestions."
+        else:
+            message = f"Currency {input_currency} not found."
+
         return HomeCurrencyResponse(
             new_currency=input_currency,
             success=False,
-            message=f"Error while validating currency {input_currency}."
+            message=message,
+            recommendations=recommendations).__dict__
+
+    except Exception as search_error:
+        logger.error(
+            "Error searching for currency recommendations for %s: %s",
+            input_currency, search_error)
+        
+        # If both validation and recommendations fail, provide appropriate error message
+        if validation_error:
+            message = f"Error while validating currency {input_currency} and unable to fetch recommendations."
+        else:
+            message = f"Error while searching for currency {input_currency} recommendations."
+            
+        return HomeCurrencyResponse(
+            new_currency=input_currency,
+            success=False,
+            message=message
         ).__dict__
 
 

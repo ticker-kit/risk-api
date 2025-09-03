@@ -25,13 +25,12 @@ class YFinanceService:
     def history_df_to_dict(self, df: pd.DataFrame, remove_time=True) -> Dict:
         """ Convert a dataframe to a dictionary. """
         result = df.copy()
-        result.index = result.index.tz_convert('UTC')
         if remove_time:
             # Basically lose the time component but makes it comparable to other data
             result.index = result.index.normalize()
 
+        result['index'] = [ts.isoformat() for ts in result.index.tolist()]
         result = result.to_dict(orient="list")
-        result['index'] = [ts.isoformat() for ts in df.index.tolist()]
         validated_result = HistoryDict(**result)
         return validated_result.model_dump()
 
@@ -118,7 +117,7 @@ class YFinanceService:
             self,
             ticker: str,
             period="1wk",
-            remote_time=True) -> pd.DataFrame:
+            remove_time=True) -> pd.DataFrame:
         """Get historical data for a ticker"""
 
         # Adjust the ticker
@@ -133,7 +132,7 @@ class YFinanceService:
 
         # Get the cache key
         cache_key = construct_cache_key(
-            CacheKey.HISTORICAL, ticker, period, str(remote_time))
+            CacheKey.HISTORICAL, ticker, period, str(remove_time))
 
         # Return the cached data if it exists
         cached_data = await redis_service.get_cached_data(cache_key)
@@ -150,14 +149,11 @@ class YFinanceService:
                 raise RuntimeError(
                     f"Error: No historical data found for ticker `{ticker}`")
 
-            if 'Close' not in hist_data.columns:
-                raise RuntimeError(
-                    f"Error: Close column not found in historical data for ticker `{ticker}`")
+            hist_data.index = hist_data.index.tz_convert('UTC')
 
-            await redis_service.set_cached_data(cache_key, self.history_df_to_json(hist_data, remote_time))
+            await redis_service.set_cached_data(cache_key, self.history_df_to_json(hist_data, remove_time))
 
-            if remote_time:
-                hist_data.index = hist_data.index.tz_convert('UTC')
+            if remove_time:
                 hist_data.index = hist_data.index.normalize()
 
             return hist_data

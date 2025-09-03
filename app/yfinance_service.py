@@ -7,7 +7,7 @@ from typing import Dict, List, Optional,  Any
 
 import yfinance as yf
 import pandas as pd
-from fastapi import HTTPException
+
 
 from yfinance.utils import is_valid_period_format
 from app.redis_service import redis_service, construct_cache_key, CacheKey
@@ -233,8 +233,7 @@ class YFinanceService:
         """
         query_upper = query.upper().strip()
         if not query_upper:
-            raise HTTPException(
-                status_code=400, detail="Search query is required")
+            raise ValueError("Query is required")
 
         cache_key = construct_cache_key(
             CacheKey.SEARCH, query_upper, str(max_results), str(fuzzy))
@@ -263,10 +262,7 @@ class YFinanceService:
         except Exception as e:
             logger.error(
                 "Error searching tickers for query '%s': %s", query, e)
-            raise HTTPException(
-                status_code=500,
-                detail="yfinance failed to search for tickers"
-            ) from e
+            raise Exception("yfinance failed to search for tickers") from e
 
     async def get_current_price(self, ticker: str) -> Optional[float]:
         """

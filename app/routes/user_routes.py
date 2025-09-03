@@ -150,13 +150,13 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
     ).to_dict()
 
 
-@router.get("/home_currency")
-async def validate_home_currency(
+@router.put("/home_currency")
+async def change_home_currency(
     code: str,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    """Validate a currency code for use as home currency."""
+    """Change the user's home currency after validation."""
 
     # Normalize currency code
     input_currency = code.upper().strip()
@@ -181,9 +181,22 @@ async def validate_home_currency(
 
     # Fast path for common currencies
     if input_currency in ["USD", "EUR"]:
-        return HomeCurrencyResponse(
-            new_currency=input_currency,
-            success=True).__dict__
+        try:
+            # Update user's currency in database
+            current_user.currency = input_currency
+            session.add(current_user)
+            session.commit()
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=True,
+                message=f"Home currency successfully changed to {input_currency}").__dict__
+        except Exception as e:
+            session.rollback()
+            logger.error("Error updating user currency to %s: %s", input_currency, e)
+            return HomeCurrencyResponse(
+                new_currency=input_currency,
+                success=False,
+                message=f"Error updating currency to {input_currency}").__dict__
 
     # Validate currency using yfinance
     validation_ticker = f"EUR{input_currency}=X"
@@ -191,9 +204,22 @@ async def validate_home_currency(
         validated_currency = await yfinance_service.validate_ticker(validation_ticker)
 
         if validated_currency:
-            return HomeCurrencyResponse(
-                new_currency=input_currency,
-                success=True).__dict__
+            try:
+                # Update user's currency in database
+                current_user.currency = input_currency
+                session.add(current_user)
+                session.commit()
+                return HomeCurrencyResponse(
+                    new_currency=input_currency,
+                    success=True,
+                    message=f"Home currency successfully changed to {input_currency}").__dict__
+            except Exception as e:
+                session.rollback()
+                logger.error("Error updating user currency to %s: %s", input_currency, e)
+                return HomeCurrencyResponse(
+                    new_currency=input_currency,
+                    success=False,
+                    message=f"Error updating currency to {input_currency}").__dict__
 
         # Currency not found - get recommendations
         try:

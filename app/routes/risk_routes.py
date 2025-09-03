@@ -15,9 +15,6 @@ router = APIRouter()
 async def get_ticker_data(ticker: str, currency: str | None = None):
     """ Calculate risk metrics from a stock ticker. """
 
-    print(f"ticker: {ticker}")
-    print(f"currency: {currency}")
-
     ticker = yfinance_service.adjust_ticker(ticker)
 
     # cache_key = construct_cache_key(CacheKey.TICKER_METRICS, ticker)

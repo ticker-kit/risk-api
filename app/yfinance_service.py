@@ -22,7 +22,7 @@ class YFinanceService:
     #########################################################
     # History Data Converters
 
-    def history_df_to_dict(self, df: pd.DataFrame, remove_time=True) -> Dict:
+    def history_df_to_dict_validated(self, df: pd.DataFrame, remove_time=True) -> Dict:
         """ Convert a dataframe to a dictionary. """
         result = df.copy()
         if remove_time:
@@ -30,8 +30,14 @@ class YFinanceService:
             result.index = result.index.normalize()
 
         result['index'] = [ts.isoformat() for ts in result.index.tolist()]
+
         result = result.to_dict(orient="list")
-        validated_result = HistoryDict(**result)
+
+        try:
+            validated_result = HistoryDict(**result)
+        except Exception as e:
+            raise Exception(f"Error validating history data: `{e}`") from e
+
         return validated_result.model_dump()
 
     def history_dict_to_json(self, dictionary: Dict) -> str:
@@ -49,9 +55,9 @@ class YFinanceService:
         result.index = pd.to_datetime(result.index, utc=True)
         return result
 
-    def history_df_to_json(self, df: pd.DataFrame, remove_time=True) -> str:
+    def history_df_to_json_validated(self, df: pd.DataFrame, remove_time=True) -> str:
         """ Convert a dataframe to a JSON string. """
-        return self.history_dict_to_json(self.history_df_to_dict(df, remove_time))
+        return self.history_dict_to_json(self.history_df_to_dict_validated(df, remove_time))
 
     def history_json_to_df(self, json_string: str) -> pd.DataFrame:
         """ Convert a JSON string to a dataframe. """
@@ -151,7 +157,9 @@ class YFinanceService:
 
             hist_data.index = hist_data.index.tz_convert('UTC')
 
-            await redis_service.set_cached_data(cache_key, self.history_df_to_json(hist_data, remove_time))
+            await redis_service.set_cached_data(
+                cache_key,
+                self.history_df_to_json_validated(hist_data, remove_time))
 
             if remove_time:
                 hist_data.index = hist_data.index.normalize()

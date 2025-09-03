@@ -4,7 +4,7 @@ More fields can be added as needed.
 May break if yfinance changes the fields.
 """
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TickerSearchReference(BaseModel):
@@ -58,12 +58,22 @@ class TickerInfo(BaseModel):
 
 
 class HistoryDict(BaseModel):
+    """
+    yfinance.Ticker([TICKER]).history() 
+    The above returns a pandas dataframe, but converted to dictionary we get this model.
+    """
+    index: List[str]
+
     Open: List[float]
     High: List[float]
     Low: List[float]
     Close: List[float]
     Volume: List[int]
-    Dividends: List[float]
-    # 'Stock Splits': List[float]
-    # 'Capital Gains': List[float]
-    index: List[str]
+
+    Dividends: Optional[List[float]] = Field(default=None)
+    Stock_Splits: Optional[List[float]] = Field(
+        default=None,
+        alias='Stock Splits')
+    Capital_Gains: Optional[List[float]] = Field(
+        default=None,
+        alias='Capital Gains')

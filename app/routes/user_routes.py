@@ -200,16 +200,9 @@ async def change_home_currency(
 
     # Validate currency using yfinance
     validation_ticker = f"EUR{input_currency}=X"
-    validated_currency = False
-    validation_error = None
     
     # Try to validate the currency
-    try:
-        validated_currency = await yfinance_service.validate_ticker(validation_ticker)
-    except Exception as e:
-        validation_error = e
-        logger.error("Error validating home currency %s: %s", input_currency, e)
-        validated_currency = False
+    validated_currency = await yfinance_service.validate_ticker(validation_ticker)
 
     # If validation succeeded, update the currency
     if validated_currency:
@@ -253,11 +246,8 @@ async def change_home_currency(
         # Remove duplicates while preserving order
         recommendations = list(dict.fromkeys(recommendations))
 
-        # Provide appropriate message based on whether validation failed due to exception or not found
-        if validation_error:
-            message = f"Could not validate currency {input_currency} due to service error, but here are some suggestions."
-        else:
-            message = f"Currency {input_currency} not found."
+        # Since validation failed, provide appropriate message
+        message = f"Currency {input_currency} not found."
 
         return HomeCurrencyResponse(
             new_currency=input_currency,
@@ -270,11 +260,8 @@ async def change_home_currency(
             "Error searching for currency recommendations for %s: %s",
             input_currency, search_error)
         
-        # If both validation and recommendations fail, provide appropriate error message
-        if validation_error:
-            message = f"Error while validating currency {input_currency} and unable to fetch recommendations."
-        else:
-            message = f"Error while searching for currency {input_currency} recommendations."
+        # If recommendations fail, provide appropriate error message
+        message = f"Error while searching for currency {input_currency} recommendations."
             
         return HomeCurrencyResponse(
             new_currency=input_currency,

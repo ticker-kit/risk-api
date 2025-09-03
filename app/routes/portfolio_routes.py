@@ -53,10 +53,13 @@ async def add_position(
         )
 
     # Validate inputs
-    ticker = await yfinance_service.validate_ticker(position.ticker)
-    if not ticker:
+    is_valid = await yfinance_service.validate_ticker(position.ticker)
+    if not is_valid:
         raise HTTPException(
             status_code=400, detail="Invalid ticker symbol")
+    
+    # Get the normalized ticker
+    ticker = yfinance_service.adjust_ticker(position.ticker)
 
     quantity = position.quantity
     if quantity is None or quantity <= 0 or quantity > 1000000:

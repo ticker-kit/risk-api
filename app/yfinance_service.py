@@ -79,10 +79,10 @@ class YFinanceService:
 
         try:
             await self.get_ticker_info(upper_ticker)
-            return upper_ticker
+            return True
 
         except Exception as e:
-            raise Exception(str(e)) from e
+            return False
 
     async def get_ticker_info(self, ticker: str, only_validated: bool = True) -> Dict[str, Any]:
         """

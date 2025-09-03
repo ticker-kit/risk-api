@@ -75,9 +75,8 @@ class YFinanceService:
     async def validate_ticker(self, ticker: str):
         """ Validate a ticker symbol. """
 
-        upper_ticker = self.adjust_ticker(ticker)
-
         try:
+            upper_ticker = self.adjust_ticker(ticker)
             await self.get_ticker_info(upper_ticker)
             return True
 

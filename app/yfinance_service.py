@@ -1,24 +1,64 @@
 """
 YFinance service module - centralized yfinance interactions.
 """
-
+import json
 import logging
 from typing import Dict, List, Optional,  Any
-from io import StringIO
 
 import yfinance as yf
-from yfinance.utils import is_valid_period_format
 import pandas as pd
 from fastapi import HTTPException
 
+from yfinance.utils import is_valid_period_format
 from app.redis_service import redis_service, construct_cache_key, CacheKey
-from app.models.yfinance_models import TickerInfo
+from app.models.yfinance_models import TickerInfo, HistoryDict
 
 logger = logging.getLogger(__name__)
 
 
 class YFinanceService:
     """Service class for all yfinance operations."""
+
+    #########################################################
+    # History Data Converters
+
+    def history_df_to_dict(self, df: pd.DataFrame, remove_time=True) -> Dict:
+        """ Convert a dataframe to a dictionary. """
+        result = df.copy()
+        result.index = result.index.tz_convert('UTC')
+        if remove_time:
+            # Basically lose the time component but makes it comparable to other data
+            result.index = result.index.normalize()
+
+        result = result.to_dict(orient="list")
+        result['index'] = [ts.isoformat() for ts in df.index.tolist()]
+        validated_result = HistoryDict(**result)
+        return validated_result.model_dump()
+
+    def history_dict_to_json(self, dictionary: Dict) -> str:
+        """ Convert a dictionary to a JSON string. """
+        return json.dumps(dictionary)
+
+    def history_json_to_dict(self, json_string: str) -> Dict:
+        """ Convert a JSON string to a dictionary. """
+        return json.loads(json_string)
+
+    def history_dict_to_df(self, dictionary: Dict) -> pd.DataFrame:
+        """ Convert a dictionary to a dataframe. """
+        result = pd.DataFrame.from_dict(dictionary, orient="columns")
+        result.set_index('index', inplace=True)
+        result.index = pd.to_datetime(result.index, utc=True)
+        return result
+
+    def history_df_to_json(self, df: pd.DataFrame, remove_time=True) -> str:
+        """ Convert a dataframe to a JSON string. """
+        return self.history_dict_to_json(self.history_df_to_dict(df, remove_time))
+
+    def history_json_to_df(self, json_string: str) -> pd.DataFrame:
+        """ Convert a JSON string to a dataframe. """
+        return self.history_dict_to_df(self.history_json_to_dict(json_string))
+
+    #########################################################
 
     def adjust_ticker(self, ticker: str) -> str:
         """ Adjust a ticker symbol. """
@@ -77,7 +117,8 @@ class YFinanceService:
     async def get_historical_data(
             self,
             ticker: str,
-            period: str = "1wk") -> pd.DataFrame:
+            period="1wk",
+            remote_time=True) -> pd.DataFrame:
         """Get historical data for a ticker"""
 
         # Adjust the ticker
@@ -91,12 +132,13 @@ class YFinanceService:
             raise ValueError(f"Invalid period format for {ticker}: {period}")
 
         # Get the cache key
-        cache_key = construct_cache_key(CacheKey.HISTORICAL, ticker, period)
+        cache_key = construct_cache_key(
+            CacheKey.HISTORICAL, ticker, period, str(remote_time))
 
         # Return the cached data if it exists
         cached_data = await redis_service.get_cached_data(cache_key)
         if cached_data is not None:
-            return pd.read_json(StringIO(cached_data), orient="split")
+            return self.history_json_to_df(cached_data)
 
         # Fetch the historical data
         try:
@@ -112,7 +154,11 @@ class YFinanceService:
                 raise RuntimeError(
                     f"Error: Close column not found in historical data for ticker `{ticker}`")
 
-            await redis_service.set_cached_data(cache_key, hist_data.to_json(orient="split"))
+            await redis_service.set_cached_data(cache_key, self.history_df_to_json(hist_data, remote_time))
+
+            if remote_time:
+                hist_data.index = hist_data.index.tz_convert('UTC')
+                hist_data.index = hist_data.index.normalize()
 
             return hist_data
 

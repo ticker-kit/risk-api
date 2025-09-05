@@ -55,7 +55,9 @@ class AssetAnalysis():
         try:
             self.__info = await yfinance_service.get_ticker_info(self.__ticker)
 
-            self.__history = await yfinance_service.get_historical_data(self.__ticker, self.__period)
+            self.__history = await yfinance_service.get_historical_data(
+                self.__ticker,
+                self.__period)
 
             currency_ticker = None
             if self.__currency is not None:
@@ -66,7 +68,9 @@ class AssetAnalysis():
                     currency_ticker = f"{self.__currency}{self.__info.get('currency')}=X"
 
             if currency_ticker is not None:
-                currency_history = await yfinance_service.get_historical_data(currency_ticker, self.__period)
+                currency_history = await yfinance_service.get_historical_data(
+                    currency_ticker,
+                    self.__period)
 
                 self.__history['currency_close'] = currency_history['Close']
                 # Drop rows where either Close or currency_close is NaN
@@ -74,9 +78,16 @@ class AssetAnalysis():
                     subset=['Close', 'currency_close'])
                 if self.__history.empty:
                     raise ValueError(
-                        f"No history data after converting `{self.__ticker}` to currency `{currency_ticker}`")
+                        f"No history data after converting `{self.__ticker}` " +
+                        f"to currency `{currency_ticker}`")
+                try:
+                    self.__history['Close'] = self.__history['Close'] / \
+                        self.__history['currency_close']
+                except Exception as e:
+                    raise ValueError(
+                        f"Error converting `{self.__ticker}` to currency `{currency_ticker}`." +
+                        " Possible reasons include division by zero.") from e
 
-                self.__history['Close'] = self.__history['Close'] / self.__history['currency_close']
                 self.__history.drop(columns=['currency_close'], inplace=True)
 
             self.__expires = self.__info.get('expireIsoDate') is not None
@@ -234,7 +245,11 @@ class AssetAnalysis():
             "cagr_fitted": cf['cagr_fitted'] if cf is not None else None
         }
 
-    def __calculate_rolling_stats(self, log_returns: pd.Series, window_size: int, name_suffix: str | None = None):
+    def __calculate_rolling_stats(
+            self,
+            log_returns: pd.Series,
+            window_size: int,
+            name_suffix: str | None = None):
         rolling = log_returns.rolling(window=round(window_size))
 
         rolling_sum = rolling.sum()

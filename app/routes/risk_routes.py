@@ -20,7 +20,10 @@ async def get_ticker_data(ticker: str, currency: str | None = None):
     # cache_key = construct_cache_key(CacheKey.TICKER_METRICS, ticker)
 
     try:
-        initial_asset_data = await create_asset_analysis(ticker, period="10y", currency=currency)
+        initial_asset_data = await create_asset_analysis(
+            ticker,
+            period="15y",
+            currency=currency)
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

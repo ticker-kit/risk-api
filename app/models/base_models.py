@@ -76,8 +76,7 @@ class AssetAnalysis():
                     raise ValueError(
                         f"No history data after converting `{self.__ticker}` to currency `{currency_ticker}`")
 
-                self.__history['Close'] = self.__history['Close'] * \
-                    self.__history['currency_close']
+                self.__history['Close'] = self.__history['Close'] / self.__history['currency_close']
                 self.__history.drop(columns=['currency_close'], inplace=True)
 
             self.__expires = self.__info.get('expireIsoDate') is not None

@@ -1,6 +1,17 @@
 # Risk API
 
-FastAPI-based risk metrics API with Redis pub/sub integration for portfolio management and price tracking.
+A comprehensive **FastAPI-based risk metrics API** that provides portfolio management and real-time price tracking capabilities. This service enables users to manage investment portfolios, track market data, calculate risk metrics, and receive real-time price updates through Redis pub/sub messaging.
+
+## What it does
+
+The Risk API is designed for financial applications and portfolio management systems. Key features include:
+
+- **Portfolio Management**: Create, read, update, and delete investment positions
+- **Real-time Price Tracking**: Integrate with yFinance for live market data
+- **Risk Metrics Calculation**: Analyze portfolio risk and performance metrics  
+- **User Authentication**: Secure JWT-based user management
+- **Redis Pub/Sub Integration**: Real-time price updates and caching
+- **Multi-environment Support**: Development (FakeRedis), Docker, and production modes
 
 ## Architecture
 
@@ -13,44 +24,110 @@ This service is part of a larger microservices architecture that handles:
 ## Tech Stack
 
 - **FastAPI** - Web framework
-- **PostgreSQL** - Database
-- **Redis** - Pub/sub messaging and caching
-- **SQLAlchemy** - ORM
-- **yFinance** - Market data
+- **PostgreSQL** - Database (production)
+- **SQLite** - Database (local development)
+- **Redis** - Pub/sub messaging and caching (with FakeRedis for local dev)
+- **SQLAlchemy** - ORM with Alembic for migrations
+- **yFinance** - Market data integration
 - **JWT** - Authentication
 
-## Setup
+## Getting Started
+
+### Prerequisites
+
+- Python 3.9+ 
+- Git
+
+### Clone and Run
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/ticker-kit/risk-api.git
+   cd risk-api
+   ```
+
+2. **Install dependencies** (takes ~45 seconds):
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment**:
+   ```bash
+   cp env.example .env
+   mkdir -p data
+   ```
+
+4. **Start the application**:
+   ```bash
+   uvicorn app.main:app --env-file .env --reload --port 10000
+   ```
+
+5. **Access the API**:
+   - API: http://localhost:10000
+   - Interactive docs: http://localhost:10000/docs
+   - Health check: http://localhost:10000/healthz
+
+The application will run in development mode using SQLite database and FakeRedis (no external Redis server required).
+
+## Advanced Setup
 
 ### Environment Configuration
 
-Copy `env.example` to `.env` and configure:
+Copy `env.example` to `.env` and configure for different environments:
 
+**Development (Local - Default)**:
 ```bash
-ENV=dev                    # dev (FakeRedis), docker (Redis container), prod (Upstash)
+ENV=dev                    # Uses FakeRedis (no external Redis needed)
+DATABASE_URL=sqlite:///./data/risk.db
+JWT_SECRET_KEY=your-secret-key
+CORS_ORIGIN=http://localhost:3000
+```
+
+**Docker Deployment**:
+```bash
+ENV=docker               # Uses Redis container
 DATABASE_URL=postgresql://user:password@localhost:5432/db
 JWT_SECRET_KEY=your-secret-key
 CORS_ORIGIN=http://localhost:3000
 ```
 
-### Docker (Recommended)
+### Docker Setup
 
+1. **Create environment files**:
+   - `.env.docker.postgres`:
+     ```
+     POSTGRES_USER=risk_user
+     POSTGRES_PASSWORD=risk_password
+     POSTGRES_DB=risk_db
+     ```
+   
+   - `.env.docker.api`:
+     ```
+     ENV=docker
+     DATABASE_URL=postgresql://risk_user:risk_password@risk-postgres:5432/risk_db
+     JWT_SECRET_KEY=docker-super-secret-jwt-key-for-testing
+     CORS_ORIGIN=http://localhost:3000
+     ```
+
+2. **Start with Docker Compose**:
 ```bash
-# Start all services
-docker-compose up --build
-
-# API available at http://localhost:10000
+docker compose up --build
 ```
 
-### Local Development
+### Local Development (Alternative)
+
+If you prefer manual setup instead of the quick start above:
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Start services
-powershell -ExecutionPolicy Bypass -File local_start.ps1
+# Configure environment  
+cp env.example .env
+mkdir -p data
 
-# Choose: (L)ocal or (D)ocker
+# Start with custom configuration
+uvicorn app.main:app --env-file .env --reload --port 10000
 ```
 
 ## API Endpoints

@@ -48,7 +48,7 @@ This service is part of a larger microservices architecture that handles:
 
 2. **Install dependencies** (takes ~45 seconds):
    ```bash
-   pip install -r requirements.txt
+   pip3 install -r requirements.txt
    ```
 
 3. **Set up environment**:

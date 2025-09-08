@@ -111,7 +111,7 @@ CORS_ORIGIN=http://localhost:3000
 
 2. **Start with Docker Compose**:
 ```bash
-docker compose up --build
+docker compose up --build --timeout 300
 ```
 
 ### Local Development (Alternative)
